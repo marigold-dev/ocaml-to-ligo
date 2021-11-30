@@ -164,7 +164,14 @@ and to_arg arg =
      | _ -> failwith "TODO: not implemented" *)
 let loc = Location.none
 
-let code = [%str let rec add (a, b) = a + b]
+let code = [%str 
+
+let rec add (a, b) = a + b
+
+module M = struct
+  let a = 1
+end
+]
 
 let env =
   Compmisc.init_path ();
@@ -178,7 +185,7 @@ let env =
 
 (* let () = Format.printf "%a\n" Pprintast.structure code *)
 
-let print_typed_struct struct_item_desc =
+let rec get_typed_struct indentation struct_item_desc =
   match struct_item_desc with
   | Pstr_value (rec', [ vb ]) ->
       let pattern = vb.pvb_pat in
@@ -189,21 +196,34 @@ let print_typed_struct struct_item_desc =
         Typecore.type_exp env vb.pvb_expr |> fun e -> e.exp_type
       in
 
-      [
-        Format.asprintf "let %s%a : %a = %a\n"
+      
+        [Format.asprintf "let %s%a : %a = %a\n"
           (if rec' == Recursive then "rec " else "")
           Pprintast.pattern pattern Printtyp.type_expr expr_type
-          Pprintast.expression expr;
-      ]
+          Pprintast.expression expr];
+      
   | Pstr_value (_, _) -> failwith "let ... and not implemented "
+  | Pstr_module     {
+    pmb_name={txt=Some a; _};
+    pmb_expr={pmod_desc=Pmod_structure struc; _};
+    _
+   } -> [Format.asprintf "module %s = struct \n%s end" a (stringify_structure (indentation + 1) struc)]
   | _ -> failwith "Not implemented"
-
+and stringify_structure indentation struc = 
+let rec repeat n s = 
+  match n with
+| 0 -> ""
+| x when x > 0 -> s ^ repeat (n - 1) s 
+| _ -> assert false in
+struc
+|> List.map (fun si -> si.pstr_desc)
+|> List.map (get_typed_struct indentation)
+|> List.flatten
+|> List.map ((^) (repeat (indentation * 2) " "))
+|> String.concat "\n"
 (* let tcode = Typecore.type_exp env code *)
 
 (* let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression *)
 
-let () =
-  code
-  |> List.map (fun si -> si.pstr_desc)
-  |> List.map print_typed_struct
-  |> List.concat |> List.iter print_endline
+
+let () = stringify_structure 0 code |> print_endline
