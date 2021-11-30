@@ -164,7 +164,7 @@ and to_arg arg =
      | _ -> failwith "TODO: not implemented" *)
 let loc = Location.none
 
-let code = [%str let add (a, b) = a + b]
+let code = [%str let rec add (a, b) = a + b]
 
 let env =
   Compmisc.init_path ();
@@ -180,20 +180,22 @@ let env =
 
 let print_typed_struct struct_item_desc =
   match struct_item_desc with
-  | Pstr_value (_, vbl) ->
-      let typed_value_binding_string vb =
-        let pattern = vb.pvb_pat in
+  | Pstr_value (rec', [ vb ]) ->
+      let pattern = vb.pvb_pat in
 
-        let expr = vb.pvb_expr |> Typecore.type_exp env |> to_expression in
+      let expr = vb.pvb_expr |> Typecore.type_exp env |> to_expression in
 
-        let expr_type =
-          Typecore.type_exp env vb.pvb_expr |> fun e -> e.exp_type
-        in
-
-        Format.asprintf "%a : %a = %a\n" Pprintast.pattern pattern
-          Printtyp.type_expr expr_type Pprintast.expression expr
+      let expr_type =
+        Typecore.type_exp env vb.pvb_expr |> fun e -> e.exp_type
       in
-      List.map typed_value_binding_string vbl
+
+      [
+        Format.asprintf "let %s%a : %a = %a\n"
+          (if rec' == Recursive then "rec " else "")
+          Pprintast.pattern pattern Printtyp.type_expr expr_type
+          Pprintast.expression expr;
+      ]
+  | Pstr_value (_, _) -> failwith "let ... and not implemented "
   | _ -> failwith "Not implemented"
 
 (* let tcode = Typecore.type_exp env code *)
