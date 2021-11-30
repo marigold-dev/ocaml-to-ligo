@@ -81,14 +81,18 @@ let rec to_expression expr =
       let funct = to_expression funct in
       let args = List.map to_arg args in
       Exp.apply funct args
-  (*| Texp_letmodule (_ident, loc , _module_presence , module_expr , expression) ->
+
+  (*
+  none of this is actually necessary
+  | Texp_letmodule (Some ident, _loc , _module_presence , module_expr , expression) ->
     let pexpr = Untypeast.untype_expression expression in
-    let () = Format.printf "%a" Pprintast.expression pexpr
-    Exp.letmodule loc (assert false) pexpr*)
-  | Texp_letmodule _ ->
+    let () = Format.printf "%a" Pprintast.expression pexpr in
+    Exp.letmodule (Exp.ident ident) (failwith "need to do smth with module_expr") pexpr
+   | Texp_letmodule _ ->
       let pexpr = Untypeast.untype_expression expr in
-      (* sounds good, doesn't work *)
-      pexpr
+      let () = Format.printf "want to remove the letmodule: %a\n%!" Pprintast.expression in
+      sounds good, doesn't work 
+      pexpr*)
   | _ ->
       let pexpr = Untypeast.untype_expression expr in
       unimplemented Pprintast.expression pexpr __LINE__
@@ -117,18 +121,28 @@ end = struct
 end
 
 let code =
-  [%expr
-    let module M : sig
+  [%str
+    let a = 1;
+    module M : sig
       type t
     end = struct
       type t = int
-    end in
-    ()]
+    end]
+    
+let a = List.nth code 1 
 
 let env =
   Compmisc.init_path ();
   Compmisc.initial_env ()
 
-let tcode = Typecore.type_exp env code
+let () = Format.printf "%a" (Pprintast.structure) code 
+(* Need to write a function that behaves the same as Pprintast.structure that behaves the same except 
+  doesn't print the module type when pritning a module
+  also it needs to do other things like make function arguments explicit but that's already done 
+  by eduardo for individual expressions, so just need to map the structure list and apply that 
+  change before printing *)
+
+(* let tcode = Typecore.type_exp env code
 
 let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression
+*)
