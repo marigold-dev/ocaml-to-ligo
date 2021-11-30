@@ -115,33 +115,32 @@ and to_arg arg =
      | _ -> failwith "TODO: not implemented" *)
 let loc = Location.none
 
-let code =
-  [%str
-    let a = 1
-    and b = 2]
-    
+let code = [%str let add (a, b) = a + b]
 
 let env =
   Compmisc.init_path ();
   Compmisc.initial_env ()
 
-
-(* Need to write a function that behaves the same as Pprintast.structure that behaves the same except 
-  doesn't print the module type when pritning a module
-  also it needs to do other things like make function arguments explicit but that's already done 
-  by eduardo for individual expressions, so just need to map the structure list and apply that 
-  change before printing *)
-
+(* Need to write a function that behaves the same as Pprintast.structure that behaves the same except
+   doesn't print the module type when pritning a module
+   also it needs to do other things like make function arguments explicit but that's already done
+   by eduardo for individual expressions, so just need to map the structure list and apply that
+   change before printing *)
 
 (* let () = Format.printf "%a\n" Pprintast.structure code *)
 
-let type_struct struct_item_desc =
+let print_typed_struct struct_item_desc =
   match struct_item_desc with
-  | Pstr_value (Nonrecursive, vbl) ->
-      List.map
-        (fun vb ->
-          (vb.pvb_pat, to_expression (Typecore.type_exp env vb.pvb_expr),  Typecore.type_exp env vb.pvb_expr))
-        vbl
+  | Pstr_value (_, vbl) ->
+      vbl
+      |> List.map (fun vb ->
+             ( vb.pvb_pat,
+               to_expression (Typecore.type_exp env vb.pvb_expr),
+               Typecore.type_exp env vb.pvb_expr ))
+      |> List.map (fun (pattern, exp, typed_exp) ->
+             Format.asprintf "%a : %a = %a\n" Pprintast.pattern pattern
+               Printtyp.type_expr typed_exp.exp_type Pprintast.expression exp)
+      |> List.iter (Format.printf "let %s\n")
   | _ -> failwith "Not implemented"
 
 (* let tcode = Typecore.type_exp env code *)
@@ -149,8 +148,4 @@ let type_struct struct_item_desc =
 (* let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression *)
 
 let () =
-  code
-  |> List.map (fun si -> si.pstr_desc)
-  |> List.map type_struct
-  |> List.map ((fun l -> String.concat "and " (List.map (fun (pattern, exp, typed_exp) -> Format.asprintf "%a : %a = %a\n" Pprintast.pattern pattern Printtyp.type_expr typed_exp.exp_type Pprintast.expression exp) l)))
-  |> List.iter (Format.printf "let %s\n")
+  code |> List.map (fun si -> si.pstr_desc) |> List.iter print_typed_struct
