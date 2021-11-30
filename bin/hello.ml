@@ -77,55 +77,61 @@ let rec to_expression expr =
           (to_coretype pat_type)
       in
       Exp.fun_ Nolabel None param (to_expression body)
-      | Texp_function
-          {
-            arg_label = Nolabel;
-            (* TODO: what is this??? *)
-            param = _;
-            cases =
-              [
+  | Texp_function
+      {
+        arg_label = Nolabel;
+        (* TODO: what is this??? *)
+        param = _;
+        cases =
+          [
+            {
+              c_lhs =
                 {
-                  c_lhs =
-                    {
-                      pat_desc = Tpat_tuple params;
-                      pat_loc = p;
-                      pat_extra = [];
-                      pat_type=_;
-                      pat_env = _;
-                      pat_attributes = [];
-                    };
-                  c_guard = None;
-                  c_rhs = body;
+                  pat_desc = Tpat_tuple params;
+                  pat_loc = p;
+                  pat_extra = [];
+                  pat_type = _;
+                  pat_env = _;
+                  pat_attributes = [];
                 };
-              ];
-            partial = Total;
-          } ->
-          let params =
-            List.map (function 
-            | Typedtree.{pat_desc=Tpat_var(param, _); pat_type; _} -> Pat.constraint_
-              (Pat.var (mkloc (Ident.name param)))
-              (to_coretype pat_type)
-            | _ -> 
-              let pexpr = Untypeast.untype_expression expr in
-              unimplemented Pprintast.expression pexpr __LINE__
-              ) params
-          in
-          Exp.fun_ Nolabel None {
-                  ppat_desc = Ppat_tuple params;
-                  ppat_loc = p;
-                  ppat_loc_stack=[];
-                  ppat_attributes = [];
-                }
-            (to_expression body)
-  | Texp_function _ -> 
-    let pexpr = Untypeast.untype_expression expr in
-    let () = Format.printf "function not supported. Representation is %a\n" (Printast.expression 0) pexpr in
-    unimplemented Pprintast.expression pexpr __LINE__
+              c_guard = None;
+              c_rhs = body;
+            };
+          ];
+        partial = Total;
+      } ->
+      let params =
+        List.map
+          (function
+            | Typedtree.{ pat_desc = Tpat_var (param, _); pat_type; _ } ->
+                Pat.constraint_
+                  (Pat.var (mkloc (Ident.name param)))
+                  (to_coretype pat_type)
+            | _ ->
+                let pexpr = Untypeast.untype_expression expr in
+                unimplemented Pprintast.expression pexpr __LINE__)
+          params
+      in
+      Exp.fun_ Nolabel None
+        {
+          ppat_desc = Ppat_tuple params;
+          ppat_loc = p;
+          ppat_loc_stack = [];
+          ppat_attributes = [];
+        }
+        (to_expression body)
+  | Texp_function _ ->
+      let pexpr = Untypeast.untype_expression expr in
+      let () =
+        Format.printf "function not supported. Representation is %a\n"
+          (Printast.expression 0) pexpr
+      in
+      unimplemented Pprintast.expression pexpr __LINE__
   | Texp_apply (funct, args) ->
-    let funct = to_expression funct in
-    let args = List.map to_arg args in
-    Exp.apply funct args
-    (*
+      let funct = to_expression funct in
+      let args = List.map to_arg args in
+      Exp.apply funct args
+      (*
   none of this is actually necessary
   | Texp_letmodule (Some ident, _loc , _module_presence , module_expr , expression) ->
     let pexpr = Untypeast.untype_expression expression in
@@ -158,9 +164,7 @@ and to_arg arg =
      | _ -> failwith "TODO: not implemented" *)
 let loc = Location.none
 
-let code =
-  [%str
-    let add (a, b) = a + b]
+let code = [%str let add (a, b) = a + b]
 
 let env =
   Compmisc.init_path ();
@@ -174,15 +178,18 @@ let env =
 
 (* let () = Format.printf "%a\n" Pprintast.structure code *)
 
-let type_struct struct_item_desc =
+let print_typed_struct struct_item_desc =
   match struct_item_desc with
-  | Pstr_value (Nonrecursive, vbl) ->
-      List.map
-        (fun vb ->
-          ( vb.pvb_pat,
-            to_expression (Typecore.type_exp env vb.pvb_expr),
-            Typecore.type_exp env vb.pvb_expr ))
-        vbl
+  | Pstr_value (_, vbl) ->
+      vbl
+      |> List.map (fun vb ->
+             ( vb.pvb_pat,
+               to_expression (Typecore.type_exp env vb.pvb_expr),
+               Typecore.type_exp env vb.pvb_expr ))
+      |> List.map (fun (pattern, exp, typed_exp) ->
+             Format.asprintf "%a : %a = %a\n" Pprintast.pattern pattern
+               Printtyp.type_expr typed_exp.exp_type Pprintast.expression exp)
+      |> List.iter (Format.printf "let %s\n")
   | _ -> failwith "Not implemented"
 
 (* let tcode = Typecore.type_exp env code *)
@@ -190,14 +197,4 @@ let type_struct struct_item_desc =
 (* let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression *)
 
 let () =
-  code
-  |> List.map (fun si -> si.pstr_desc)
-  |> List.map type_struct
-  |> List.map (fun l ->
-         String.concat "and "
-           (List.map
-              (fun (pattern, exp, typed_exp) ->
-                Format.asprintf "%a : %a = %a\n" Pprintast.pattern pattern
-                  Printtyp.type_expr typed_exp.exp_type Pprintast.expression exp)
-              l))
-  |> List.iter (Format.printf "let %s\n")
+  code |> List.map (fun si -> si.pstr_desc) |> List.iter print_typed_struct
