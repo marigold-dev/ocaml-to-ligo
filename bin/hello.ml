@@ -181,15 +181,19 @@ let env =
 let print_typed_struct struct_item_desc =
   match struct_item_desc with
   | Pstr_value (_, vbl) ->
-      vbl
-      |> List.map (fun vb ->
-             ( vb.pvb_pat,
-               to_expression (Typecore.type_exp env vb.pvb_expr),
-               Typecore.type_exp env vb.pvb_expr ))
-      |> List.map (fun (pattern, exp, typed_exp) ->
-             Format.asprintf "%a : %a = %a\n" Pprintast.pattern pattern
-               Printtyp.type_expr typed_exp.exp_type Pprintast.expression exp)
-      |> List.iter (Format.printf "let %s\n")
+      let typed_value_binding_string vb =
+        let pattern = vb.pvb_pat in
+
+        let expr = vb.pvb_expr |> Typecore.type_exp env |> to_expression in
+
+        let expr_type =
+          Typecore.type_exp env vb.pvb_expr |> fun e -> e.exp_type
+        in
+
+        Format.asprintf "%a : %a = %a\n" Pprintast.pattern pattern
+          Printtyp.type_expr expr_type Pprintast.expression expr
+      in
+      List.map typed_value_binding_string vbl
   | _ -> failwith "Not implemented"
 
 (* let tcode = Typecore.type_exp env code *)
@@ -197,4 +201,7 @@ let print_typed_struct struct_item_desc =
 (* let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression *)
 
 let () =
-  code |> List.map (fun si -> si.pstr_desc) |> List.iter print_typed_struct
+  code
+  |> List.map (fun si -> si.pstr_desc)
+  |> List.map print_typed_struct
+  |> List.concat |> List.iter print_endline
