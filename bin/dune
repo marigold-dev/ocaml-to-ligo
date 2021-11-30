@@ -1,0 +1,14 @@
+(executable
+ (name hello)
+ (libraries
+  ligo.cst.cameligo
+  ligo.parsing.cameligo
+  ocaml-compiler-libs.common)
+ (preprocess
+  (pps ppxlib.metaquot)))
+
+(rule
+ (alias runtest)
+ (deps ./hello.exe)
+ (action
+  (run ./hello.exe)))
