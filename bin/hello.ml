@@ -99,11 +99,28 @@ and to_arg arg =
      | Tstr_value (rec_flag, binding) -> ()
      | _ -> failwith "TODO: not implemented" *)
 let loc = Location.none
-let code = [%expr fun x -> 1 + x]
+let code = [%str let a = 3]
 let env =
   Compmisc.init_path ();
   Compmisc.initial_env ()
 
-let tcode = Typecore.type_exp env code
+(* let () = Format.printf "%a\n" Pprintast.structure code *)
 
-let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression
+let type_struct struct_item_desc =
+  match struct_item_desc with
+  | Pstr_value (Nonrecursive, vbl) ->
+      List.map
+        (fun vb ->
+          (vb.pvb_pat, to_expression (Typecore.type_exp env vb.pvb_expr)))
+        vbl
+  | _ -> failwith "Not implemented"
+
+(* let tcode = Typecore.type_exp env code *)
+
+(* let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression *)
+
+let () =
+  code
+  |> List.map (fun si -> si.pstr_desc)
+  |> List.map type_struct |> List.concat
+  |> List.map (fun (pattern, exp) -> Format.printf "%a\n" Pprintast.expression)
