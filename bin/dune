@@ -1,9 +1,6 @@
 (executable
  (name hello)
- (libraries
-  ligo.cst.cameligo
-  ligo.parsing.cameligo
-  ocaml-compiler-libs.common)
+ (libraries ocaml-compiler-libs.common)
  (preprocess
   (pps ppxlib.metaquot)))
 

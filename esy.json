@@ -1,13 +1,13 @@
 {
   "dependencies": {
     "ocaml": "4.12.x",
-    "@opam/dune": "*",
-    "@opam/ligo": "*"
+    "@opam/dune": "*"
   },
   "devDependencies": {
     "@opam/ocamlformat": "*",
     "@opam/ocamlformat-rpc": "*",
-    "@opam/ocaml-lsp-server": "*"
+    "@opam/ocaml-lsp-server": "*",
+    "@opam/ppxlib": "*"
   },
   "resolutions": {
     "@opam/ocaml-recovery-parser": "serokell/ocaml-recovery-parser:ocaml-recovery-parser.opam#7a759aed307f986d43006c50b8ced677e18b5a6d",

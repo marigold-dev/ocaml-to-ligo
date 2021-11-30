@@ -5,6 +5,8 @@ open Parsetree
 open Typedtree
 open Ast_helper
 
+[@@@warning "-34"]
+
 let () = Printexc.record_backtrace true
 
 let loc = Location.none
@@ -18,8 +20,9 @@ let p desc =
     ptyp_loc_stack = [];
     ptyp_attributes = [];
   }
-let unimplemented pp value =
-  failwith (Format.asprintf "TODO: implement this %a\n%!" pp value)
+let unimplemented pp value loc =
+  failwith
+    (Format.asprintf "(%s:%d) TODO: implement this %a\n%!" __FILE__ loc pp value)
 let to_lident path = mkloc (Untypeast.lident_of_path path)
 let rec to_coretype typ = p (to_coretype_desc typ)
 
@@ -33,7 +36,7 @@ and to_coretype_desc typ =
   | Tconstr (path, args, _) ->
       Ptyp_constr (to_lident path, List.map to_coretype args)
   | Tlink typ | Tsubst typ -> to_coretype_desc typ
-  | _ -> unimplemented Printtyp.type_expr typ
+  | _ -> unimplemented Printtyp.type_expr typ __LINE__
 
 let to_constant constant =
   match constant with
@@ -78,9 +81,17 @@ let rec to_expression expr =
       let funct = to_expression funct in
       let args = List.map to_arg args in
       Exp.apply funct args
+  (*| Texp_letmodule (_ident, loc , _module_presence , module_expr , expression) ->
+    let pexpr = Untypeast.untype_expression expression in
+    let () = Format.printf "%a" Pprintast.expression pexpr
+    Exp.letmodule loc (assert false) pexpr*)
+  | Texp_letmodule _ ->
+      let pexpr = Untypeast.untype_expression expr in
+      (* sounds good, doesn't work *)
+      pexpr
   | _ ->
       let pexpr = Untypeast.untype_expression expr in
-      unimplemented Pprintast.expression pexpr
+      unimplemented Pprintast.expression pexpr __LINE__
 
 and to_arg arg =
   match arg with
@@ -99,7 +110,21 @@ and to_arg arg =
      | Tstr_value (rec_flag, binding) -> ()
      | _ -> failwith "TODO: not implemented" *)
 let loc = Location.none
-let code = [%expr fun x -> 1 + x]
+module T : sig
+  type t
+end = struct
+  type t = int
+end
+
+let code =
+  [%expr
+    let module M : sig
+      type t
+    end = struct
+      type t = int
+    end in
+    ()]
+
 let env =
   Compmisc.init_path ();
   Compmisc.initial_env ()
