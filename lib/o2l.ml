@@ -1,12 +1,7 @@
 open Ocaml_common
 open Types
 open Asttypes
-
 open Ast_helper
-
-[@@@warning "-34"]
-
-let () = Printexc.record_backtrace true
 
 let loc = Location.none
 
@@ -53,6 +48,16 @@ and mapper =
     let recurse = Untypeast.(mapper.expr) mapper in
     let open Typedtree in
     match expr.exp_desc with
+    | Texp_let (rec', [ vb ], e) ->
+        let untyped_value_binding =
+          Parsetree.
+            {
+              pvb_pat = tconstrain_pattern vb.vb_pat;
+              pvb_expr = recurse vb.vb_expr;
+              pvb_attributes = vb.vb_attributes;
+              pvb_loc = vb.vb_loc;
+            } in
+        Exp.let_ rec' [ untyped_value_binding ] (recurse e)
     | Texp_function { arg_label; param = _; cases; partial = _ } ->
         let pattern, guard, body =
           match cases with
@@ -73,9 +78,6 @@ and untype_expression a = Untypeast.untype_expression ~mapper a
 
 let loc = Location.none
 
-let env =
-  Compmisc.init_path ();
-  Compmisc.initial_env ()
 
 (* Need to write a function that behaves the same as Pprintast.structure that behaves the same except
    doesn't print the module type when pritning a module
@@ -167,109 +169,3 @@ let type_structure env structure =
       | Tmod_apply _ -> failwith "Tmod_apply impossible"
       | Tmod_constraint _ -> failwith "Tmod_constraint impossible"
       | Tmod_unpack _ -> failwith "Tmod_unpack impossible")
-(* let tcode = Typecore.type_exp env code *)
-
-(* let scode = untype_expression_expanded tcode |> Format.printf "%a\n%!" Pprintast.expression *)
-
-open Parsetree
-
-let code =
-  [%str
-    let a = Tezos.level
-    let a = 1
-    let b = a
-    let add a = a + 1
-    let rec add' (a, b) = a + b
-
-    type my_variant = VarA | VarB
-
-    type my_record = { field1 : int; field2 : string }
-
-    module M : sig
-      val a : int
-    end = struct
-      let a = 1
-    end]
-
-let stdlib =
-  [%str
-    type nat = nativeint
-
-    type (_, _) big_map
-
-    type (_, _) map
-
-    type _ set
-
-    type mutez = nat
-
-    type tez = nat
-
-    type operation
-
-    type address
-
-    type _ contract
-
-    let min : nat -> nat -> nat = assert false
-    let abs : int -> nat = assert false
-
-    module Tezos = struct
-      let level : nat = assert false
-
-      let amount : tez = assert false
-
-      let sender : address = assert false
-
-      let transaction : 'parameter -> mutez -> 'parameter contract -> operation
-          =
-        assert false
-
-      let get_contract_opt : address -> 'parameter contract option =
-        assert false
-    end
-
-    module rec Big_map : sig
-      val empty : ('key, 'value) big_map
-
-      val find_opt : 'key -> ('key, 'value) big_map -> 'value option
-
-      val add :
-        'key -> 'value -> ('key, 'value) big_map -> ('key, 'value) big_map
-
-      val remove : 'key -> ('key, 'value) big_map -> ('key, 'value) big_map
-
-      val mem : 'key -> ('key, 'value) big_map -> bool
-    end = struct
-      let empty = assert false
-
-      let find_opt = assert false
-
-      let add = assert false
-
-      let remove = assert false
-
-      let mem = assert false
-    end
-
-    module rec Set : sig
-      val add : 'el -> 'el set -> 'el set
-
-      val empty : 'a set
-
-      val cardinal : 'a set -> nat
-
-      val fold : ('acc * 'el -> 'acc) -> 'el set -> 'acc -> 'acc
-    end = struct
-      let add = assert false
-
-      let empty = assert false
-
-      let cardinal = assert false
-
-      let fold = assert false
-    end]
-let env = type_structure env stdlib |> snd
-
-let () =
-  stringify_structure 0 (code |> type_structure env |> fst) |> print_endline
