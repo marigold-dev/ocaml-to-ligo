@@ -110,6 +110,7 @@ let loc = Location.none
 let code =
   [%str
     let a = 1
+    let b = a
     let add a = a + 1
     let rec add' (a, b) = a + b
 
@@ -139,7 +140,7 @@ let rec get_typed_struct : int -> structure_item_desc -> label list =
 
       let expr = vb.vb_expr |> to_expression in
 
-      let expr_type = Typecore.type_exp env expr |> fun e -> e.exp_type in
+      let expr_type = vb.vb_expr.exp_type in
 
       [
         Format.asprintf "let %s%a : %a = %a\n"
