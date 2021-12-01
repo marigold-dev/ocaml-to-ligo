@@ -43,12 +43,14 @@ let to_constant constant =
   | Const_int n -> Pconst_integer (string_of_int n, None)
   | _ -> failwith "TODO: constants not implemented"
 
-let rec untype_pattern pattern =
+let tconstrain_pattern pattern =
   Pat.constraint_
     (Untypeast.untype_pattern pattern)
     (to_coretype pattern.pat_type)
 
-and to_expression expr =
+let untype_expression = Untypeast.untype_expression
+
+let rec to_expression expr =
   match expr.exp_desc with
   | Texp_ident (_, lident, _) -> Exp.ident lident
   | Texp_constant constant -> Exp.constant (to_constant constant)
@@ -56,11 +58,7 @@ and to_expression expr =
       let pattern, guard, body =
         match cases with
         | [ { c_lhs; c_guard; c_rhs } ] ->
-            ( Pat.constraint_
-                (Untypeast.untype_pattern c_lhs)
-                (to_coretype c_lhs.pat_type),
-              c_guard,
-              c_rhs )
+            (tconstrain_pattern c_lhs, c_guard, c_rhs)
         | _ ->
             let pexpr = Untypeast.untype_expression expr in
             Format.printf "function not supported. Representation is %a\n"
@@ -74,17 +72,20 @@ and to_expression expr =
       let funct = to_expression funct in
       let args = List.map to_arg args in
       Exp.apply funct args
-      (*
-  none of this is actually necessary
-  | Texp_letmodule (Some ident, _loc , _module_presence , module_expr , expression) ->
-    let pexpr = Untypeast.untype_expression expression in
-    let () = Format.printf "%a" Pprintast.expression pexpr in
-    Exp.letmodule (Exp.ident ident) (failwith "need to do smth with module_expr") pexpr
-   | Texp_letmodule _ ->
-      let pexpr = Untypeast.untype_expression expr in
-      let () = Format.printf "want to remove the letmodule: %a\n%!" Pprintast.expression in
-      sounds good, doesn't work 
-      pexpr*)
+  | Texp_match (exp, cases, _) ->
+      let match_cases =
+        cases
+        |> List.map (fun { c_lhs; c_guard; c_rhs } ->
+               {
+                 pc_lhs = Untypeast.untype_pattern c_lhs;
+                 pc_guard = Option.map untype_expression c_guard;
+                 pc_rhs = untype_expression c_rhs;
+               })
+      in
+      Exp.match_ (untype_expression exp) match_cases
+  | Texp_ifthenelse (if_, then_, else_) ->
+      Exp.ifthenelse (untype_expression if_) (untype_expression then_)
+        (Option.map untype_expression else_)
   | _ ->
       let pexpr = Untypeast.untype_expression expr in
       unimplemented Pprintast.expression pexpr __LINE__
@@ -94,31 +95,7 @@ and to_arg arg =
   | Nolabel, Some expr -> (Nolabel, to_expression expr)
   | _ -> failwith "TODO: implement this"
 
-(* let rec to_module_expr md_expr =
-     match md_expr.mod_desc with
-     | Tmod_structure structure -> ()
-     | Tmod_constraint (md_expr, _md_type, _md_constraint, _md_coercion) ->
-         to_module_expr md_expr
-     | _ -> failwith "TODO: not implemented"
-
-   and to_structure_item stri =
-     match stri.str_desc with
-     | Tstr_value (rec_flag, binding) -> ()
-     | _ -> failwith "TODO: not implemented" *)
 let loc = Location.none
-
-let code =
-  [%str
-    let a = Tezos.level
-    let b = a
-    let add a = a + 1
-    let rec add' (a, b) = a + b
-
-    module M : sig
-      val a : int
-    end = struct
-      let a = 1
-    end]
 
 let env =
   Compmisc.init_path ();
@@ -132,9 +109,8 @@ let env =
 
 (* let () = Format.printf "%a\n" Pprintast.structure code *)
 
-let rec get_typed_struct : int -> structure_item_desc -> label list =
- fun indentation struct_item_desc ->
-  match struct_item_desc with
+let rec typed_string_of_struct indentation ({ str_desc = sid; _ } as si) =
+  match sid with
   | Tstr_value (rec', [ vb ]) ->
       let pattern = vb.vb_pat in
 
@@ -142,12 +118,11 @@ let rec get_typed_struct : int -> structure_item_desc -> label list =
 
       let expr_type = vb.vb_expr.exp_type in
 
-      [
-        Format.asprintf "let %s%a : %a = %a\n"
-          (if rec' = Recursive then "rec " else "")
-          Pprintast.pattern (untype_pattern pattern) Printtyp.type_expr
-          expr_type Pprintast.expression expr;
-      ]
+      Format.asprintf "let %s%a : %a = %a\n"
+        (if rec' = Recursive then "rec " else "")
+        Pprintast.pattern
+        (Untypeast.untype_pattern pattern)
+        Printtyp.type_expr expr_type Pprintast.expression expr
   | Tstr_value (_, _) -> failwith "let ... and not implemented "
   | Tstr_module
       {
@@ -162,11 +137,11 @@ let rec get_typed_struct : int -> structure_item_desc -> label list =
           };
         _;
       } ->
-      [
-        Format.asprintf "module %s = struct \n%s end" a
-          (stringify_structure (indentation + 1) struc.str_items);
-      ]
-  | _ -> failwith "Not implemented"
+      Format.asprintf "module %s = struct \n%s end" a
+        (stringify_structure (indentation + 1) struc.str_items)
+  | _ ->
+      [ Untypeast.default_mapper.structure_item Untypeast.default_mapper si ]
+      |> Pprintast.string_of_structure
 
 and stringify_structure : int -> Typedtree.structure_item list -> string =
  fun indentation struc ->
@@ -177,9 +152,7 @@ and stringify_structure : int -> Typedtree.structure_item list -> string =
     | _ -> assert false
   in
   struc
-  |> List.map (fun si -> si.str_desc)
-  |> List.map (get_typed_struct indentation)
-  |> List.flatten
+  |> List.map (typed_string_of_struct indentation)
   |> List.map (( ^ ) (repeat (indentation * 2) " "))
   |> String.concat "\n"
 
@@ -197,12 +170,36 @@ let type_structure env structure =
         pmod_attributes = [];
       }
   with
-  | { mod_desc = Tmod_structure { str_items = module_expr; str_final_env; _ }; _ } ->
-      (module_expr, str_final_env)
-  | _ -> failwith "impossible"
+  | { mod_desc = Tmod_structure { str_items = struc; str_final_env; _ }; _ } ->
+      (struc, str_final_env)
+  | { mod_desc =  Tmod_constraint ({ mod_desc = Tmod_structure { str_items = struc; str_final_env; _ }; _ }, _, _, _); _ } ->
+      (struc, str_final_env)
+  | { mod_desc; _ } -> (match mod_desc with 
+  | Tmod_ident _ -> failwith "Tmod_ident impossible"
+  | Tmod_structure _ -> failwith "Tmod_structure impossible"
+  | Tmod_functor _ -> failwith "Tmod_functor impossible"
+  | Tmod_apply _ -> failwith "Tmod_apply impossible"
+  | Tmod_constraint _ -> failwith "Tmod_constraint impossible"
+  | Tmod_unpack _ -> failwith "Tmod_unpack impossible")
 (* let tcode = Typecore.type_exp env code *)
 
 (* let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression *)
+
+let code =
+  [%str
+    let a = Tezos.level
+    let a = 1
+    let b = a
+    let add a = a + 1
+    let rec add' (a, b) = a + b
+
+    type my_variant = VarA | VarB
+
+    module M : sig
+      val a : int
+    end = struct
+      let a = 1
+    end]
 
 
 let stdlib = [%str 
@@ -280,7 +277,6 @@ end = struct
 
   let fold = assert false
 end
-
 ]
 let env = type_structure env stdlib |> snd
 
