@@ -142,7 +142,7 @@ let rec get_typed_struct indentation struct_item_desc =
 
       [
         Format.asprintf "let %s%a : %a = %a\n"
-          (if rec' == Recursive then "rec " else "")
+          (if rec' = Recursive then "rec " else "")
           Pprintast.pattern pattern Printtyp.type_expr expr_type
           Pprintast.expression expr;
       ]
