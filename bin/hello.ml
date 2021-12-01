@@ -1,8 +1,7 @@
 open Ocaml_common
 open Types
 open Asttypes
-open Parsetree
-open Typedtree
+
 open Ast_helper
 
 [@@@warning "-34"]
@@ -10,47 +9,52 @@ open Ast_helper
 let () = Printexc.record_backtrace true
 
 let loc = Location.none
+
 let mkloc v =
   let open Location in
   { txt = v; loc }
-let p desc =
-  {
-    ptyp_desc = desc;
-    ptyp_loc = loc;
-    ptyp_loc_stack = [];
-    ptyp_attributes = [];
-  }
+
+let ct_of_desc desc =
+  Parsetree.
+    {
+      ptyp_desc = desc;
+      ptyp_loc = loc;
+      ptyp_loc_stack = [];
+      ptyp_attributes = [];
+    }
+
 let unimplemented pp value loc =
   failwith
     (Format.asprintf "(%s:%d) TODO: implement this %a\n%!" __FILE__ loc pp value)
-let to_lident path = mkloc (Untypeast.lident_of_path path)
-let rec to_coretype typ = p (to_coretype_desc typ)
 
-and to_coretype_desc typ =
-  match typ.desc with
+let to_lident path = mkloc (Untypeast.lident_of_path path)
+
+let rec ct_of_te typ = ct_of_desc (ct_desc_of_te typ)
+
+and ct_desc_of_te te =
+  match te.desc with
   | Tarrow (label, param, body, _) ->
-      let param = to_coretype param in
-      let body = to_coretype body in
+      let param = ct_of_te param in
+      let body = ct_of_te body in
       Ptyp_arrow (label, param, body)
-  | Ttuple ts -> Ptyp_tuple (List.map to_coretype ts)
+  | Ttuple ts -> Ptyp_tuple (List.map ct_of_te ts)
   | Tconstr (path, args, _) ->
-      Ptyp_constr (to_lident path, List.map to_coretype args)
-  | Tlink typ | Tsubst typ -> to_coretype_desc typ
-  | _ -> unimplemented Printtyp.type_expr typ __LINE__
+      Ptyp_constr (to_lident path, List.map ct_of_te args)
+  | Tlink typ | Tsubst typ -> ct_desc_of_te typ
+  | _ -> unimplemented Printtyp.type_expr te __LINE__
 
 let to_constant constant =
   match constant with
-  | Const_int n -> Pconst_integer (string_of_int n, None)
+  | Const_int n -> Parsetree.Pconst_integer (string_of_int n, None)
   | _ -> failwith "TODO: constants not implemented"
 
 let tconstrain_pattern pattern =
-  Pat.constraint_
-    (Untypeast.untype_pattern pattern)
-    (to_coretype pattern.pat_type)
+  Pat.constraint_ (Untypeast.untype_pattern pattern) (ct_of_te pattern.pat_type)
 
 let untype_expression = Untypeast.untype_expression
 
 let rec to_expression expr =
+  let open Typedtree in
   match expr.exp_desc with
   | Texp_ident (_, lident, _) -> Exp.ident lident
   | Texp_constant constant -> Exp.constant (to_constant constant)
@@ -76,11 +80,12 @@ let rec to_expression expr =
       let match_cases =
         cases
         |> List.map (fun { c_lhs; c_guard; c_rhs } ->
-               {
-                 pc_lhs = Untypeast.untype_pattern c_lhs;
-                 pc_guard = Option.map untype_expression c_guard;
-                 pc_rhs = untype_expression c_rhs;
-               })
+               Parsetree.
+                 {
+                   pc_lhs = Untypeast.untype_pattern c_lhs;
+                   pc_guard = Option.map untype_expression c_guard;
+                   pc_rhs = untype_expression c_rhs;
+                 })
       in
       Exp.match_ (untype_expression exp) match_cases
   | Texp_ifthenelse (if_, then_, else_) ->
@@ -109,7 +114,8 @@ let env =
 
 (* let () = Format.printf "%a\n" Pprintast.structure code *)
 
-let rec typed_string_of_struct indentation ({ str_desc = sid; _ } as si) =
+let rec typed_string_of_struct indentation
+    (Typedtree.{ str_desc = sid; _ } as si) =
   match sid with
   | Tstr_value (rec', [ vb ]) ->
       let pattern = vb.vb_pat in
@@ -185,6 +191,8 @@ let type_structure env structure =
 
 (* let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression *)
 
+open Parsetree
+
 let code =
   [%str
     let a = Tezos.level
@@ -194,6 +202,8 @@ let code =
     let rec add' (a, b) = a + b
 
     type my_variant = VarA | VarB
+
+    type my_record = { field1 : int; field2 : string }
 
     module M : sig
       val a : int
