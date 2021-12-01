@@ -94,14 +94,6 @@ and untype_expression a = Untypeast.untype_expression ~mapper a
 let loc = Location.none
 
 
-(* Need to write a function that behaves the same as Pprintast.structure that behaves the same except
-   doesn't print the module type when pritning a module
-   also it needs to do other things like make function arguments explicit but that's already done
-   by eduardo for individual expressions, so just need to map the structure list and apply that
-   change before printing *)
-
-(* let () = Format.printf "%a\n" Pprintast.structure code *)
-
 let rec typed_string_of_struct
     (Typedtree.{ str_desc = sid; _ } as si) =
   match sid with
@@ -120,7 +112,8 @@ let rec typed_string_of_struct
   | Tstr_value (_, _) -> failwith "let ... and not implemented "
   | _ ->
       [ mapper.structure_item mapper si ]
-      |> Pprintast.string_of_structure
+      |> Pprintast.string_of_structure 
+      |> (fun m -> m ^ "\n") 
 
 and stringify_structure : Typedtree.structure_item list -> string =
  fun struc ->
