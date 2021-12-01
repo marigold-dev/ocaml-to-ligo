@@ -1,11 +1,12 @@
 (executable
- (name hello)
- (libraries ocaml-compiler-libs.common)
+ (public_name O2L)
+ (name main)
+ (libraries ocaml-compiler-libs.common O2L)
  (preprocess
   (pps ppxlib.metaquot)))
 
 (rule
  (alias runtest)
- (deps ./hello.exe)
+ (deps ./main.exe)
  (action
-  (run ./hello.exe)))
+  (run ./main.exe)))
