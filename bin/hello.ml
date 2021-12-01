@@ -67,7 +67,22 @@ and mapper =
         Exp.fun_ arg_label (Option.map recurse guard) pattern (recurse body)
     | _ -> Untypeast.default_mapper.expr mapper expr
   in
-  { Untypeast.default_mapper with expr = untype_expression_expanded }
+  let untype_structure_item_expanded (mapper : Untypeast.mapper) structure :
+      Parsetree.structure_item =
+    match structure with
+    | Typedtree.{ str_desc = Tstr_module { mb_name; mb_expr; _ }; _ } ->
+        Str.module_ (Mb.mk mb_name (mapper.module_expr mapper mb_expr))
+    | m -> Untypeast.default_mapper.structure_item mapper m
+  in
+  let untype_structure_expanded mapper Typedtree.{ str_items; _ } =
+    List.map (untype_structure_item_expanded mapper) str_items
+  in
+  {
+    Untypeast.default_mapper with
+    expr = untype_expression_expanded;
+    structure_item = untype_structure_item_expanded;
+    structure = untype_structure_expanded;
+  }
 
 and untype_expression a = Untypeast.untype_expression ~mapper a
 
@@ -85,7 +100,7 @@ let env =
 
 (* let () = Format.printf "%a\n" Pprintast.structure code *)
 
-let rec typed_string_of_struct indentation
+let rec typed_string_of_struct
     (Typedtree.{ str_desc = sid; _ } as si) =
   match sid with
   | Tstr_value (rec', [ vb ]) ->
@@ -101,37 +116,15 @@ let rec typed_string_of_struct indentation
         (Untypeast.untype_pattern pattern)
         Printtyp.type_expr expr_type Pprintast.expression expr
   | Tstr_value (_, _) -> failwith "let ... and not implemented "
-  | Tstr_module
-      {
-        mb_name = { txt = Some a; _ };
-        mb_expr =
-          {
-            mod_desc =
-              ( Tmod_structure struc
-              | Tmod_constraint ({ mod_desc = Tmod_structure struc; _ }, _, _, _)
-                );
-            _;
-          };
-        _;
-      } ->
-      Format.asprintf "module %s = struct \n%s end" a
-        (stringify_structure (indentation + 1) struc.str_items)
   | _ ->
-      [ Untypeast.default_mapper.structure_item Untypeast.default_mapper si ]
+      [ mapper.structure_item mapper si ]
       |> Pprintast.string_of_structure
 
-and stringify_structure : int -> Typedtree.structure_item list -> string =
- fun indentation struc ->
-  let rec repeat n s =
-    match n with
-    | 0 -> ""
-    | x when x > 0 -> s ^ repeat (n - 1) s
-    | _ -> assert false
-  in
+and stringify_structure : Typedtree.structure_item list -> string =
+ fun struc ->
   struc
-  |> List.map (typed_string_of_struct indentation)
-  |> List.map (( ^ ) (repeat (indentation * 2) " "))
-  |> String.concat "\n"
+  |> List.map (typed_string_of_struct)
+  |> String.concat ""
 
 let type_structure env structure =
   match
@@ -178,6 +171,9 @@ let code =
     let a = Tezos.level
     let a = 1
     let b = a
+    let l =
+      let a = 1 in
+      a
     let add a = a + 1
     let rec add' (a, b) = a + b
 
@@ -272,4 +268,4 @@ let stdlib =
 let env = type_structure env stdlib |> snd
 
 let () =
-  stringify_structure 0 (code |> type_structure env |> fst) |> print_endline
+  stringify_structure (code |> type_structure env |> fst) |> print_endline
