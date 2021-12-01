@@ -51,54 +51,34 @@ let to_constant constant =
 let tconstrain_pattern pattern =
   Pat.constraint_ (Untypeast.untype_pattern pattern) (ct_of_te pattern.pat_type)
 
-let untype_expression = Untypeast.untype_expression
 
-let rec to_expression expr =
+let rec untype_expression_expanded mapper expr =
+  let recurse = Untypeast.(mapper.expr) mapper in
   let open Typedtree in
   match expr.exp_desc with
-  | Texp_ident (_, lident, _) -> Exp.ident lident
-  | Texp_constant constant -> Exp.constant (to_constant constant)
   | Texp_function { arg_label; param = _; cases; partial = _ } ->
       let pattern, guard, body =
         match cases with
         | [ { c_lhs; c_guard; c_rhs } ] ->
             (tconstrain_pattern c_lhs, c_guard, c_rhs)
         | _ ->
-            let pexpr = Untypeast.untype_expression expr in
+            let pexpr = untype_expression expr in
             Format.printf "function not supported. Representation is %a\n"
               (Printast.expression 0) pexpr;
             unimplemented Pprintast.expression pexpr __LINE__
       in
-      Exp.fun_ arg_label
-        (Option.map to_expression guard)
-        pattern (to_expression body)
-  | Texp_apply (funct, args) ->
-      let funct = to_expression funct in
-      let args = List.map to_arg args in
-      Exp.apply funct args
-  | Texp_match (exp, cases, _) ->
-      let match_cases =
-        cases
-        |> List.map (fun { c_lhs; c_guard; c_rhs } ->
-               Parsetree.
-                 {
-                   pc_lhs = Untypeast.untype_pattern c_lhs;
-                   pc_guard = Option.map untype_expression c_guard;
-                   pc_rhs = untype_expression c_rhs;
-                 })
-      in
-      Exp.match_ (untype_expression exp) match_cases
-  | Texp_ifthenelse (if_, then_, else_) ->
-      Exp.ifthenelse (untype_expression if_) (untype_expression then_)
-        (Option.map untype_expression else_)
+      Exp.fun_ arg_label (Option.map recurse guard) pattern (recurse body)
   | _ ->
-      let pexpr = Untypeast.untype_expression expr in
-      unimplemented Pprintast.expression pexpr __LINE__
+      Untypeast.default_mapper.expr mapper expr
 
 and to_arg arg =
   match arg with
-  | Nolabel, Some expr -> (Nolabel, to_expression expr)
+  | Nolabel, Some expr -> (Nolabel, untype_expression_expanded mapper expr)
   | _ -> failwith "TODO: implement this"
+
+and mapper = { Untypeast.default_mapper with expr = untype_expression_expanded }
+
+and untype_expression a = Untypeast.untype_expression ~mapper a
 
 let loc = Location.none
 
@@ -120,7 +100,7 @@ let rec typed_string_of_struct indentation
   | Tstr_value (rec', [ vb ]) ->
       let pattern = vb.vb_pat in
 
-      let expr = vb.vb_expr |> to_expression in
+      let expr = vb.vb_expr |> untype_expression_expanded mapper in
 
       let expr_type = vb.vb_expr.exp_type in
 
@@ -178,18 +158,27 @@ let type_structure env structure =
   with
   | { mod_desc = Tmod_structure { str_items = struc; str_final_env; _ }; _ } ->
       (struc, str_final_env)
-  | { mod_desc =  Tmod_constraint ({ mod_desc = Tmod_structure { str_items = struc; str_final_env; _ }; _ }, _, _, _); _ } ->
+  | {
+   mod_desc =
+     Tmod_constraint
+       ( { mod_desc = Tmod_structure { str_items = struc; str_final_env; _ }; _ },
+         _,
+         _,
+         _ );
+   _;
+  } ->
       (struc, str_final_env)
-  | { mod_desc; _ } -> (match mod_desc with 
-  | Tmod_ident _ -> failwith "Tmod_ident impossible"
-  | Tmod_structure _ -> failwith "Tmod_structure impossible"
-  | Tmod_functor _ -> failwith "Tmod_functor impossible"
-  | Tmod_apply _ -> failwith "Tmod_apply impossible"
-  | Tmod_constraint _ -> failwith "Tmod_constraint impossible"
-  | Tmod_unpack _ -> failwith "Tmod_unpack impossible")
+  | { mod_desc; _ } -> (
+      match mod_desc with
+      | Tmod_ident _ -> failwith "Tmod_ident impossible"
+      | Tmod_structure _ -> failwith "Tmod_structure impossible"
+      | Tmod_functor _ -> failwith "Tmod_functor impossible"
+      | Tmod_apply _ -> failwith "Tmod_apply impossible"
+      | Tmod_constraint _ -> failwith "Tmod_constraint impossible"
+      | Tmod_unpack _ -> failwith "Tmod_unpack impossible")
 (* let tcode = Typecore.type_exp env code *)
 
-(* let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression *)
+(* let scode = untype_expression_expanded tcode |> Format.printf "%a\n%!" Pprintast.expression *)
 
 open Parsetree
 
@@ -211,83 +200,85 @@ let code =
       let a = 1
     end]
 
+let stdlib =
+  [%str
+    type nat = nativeint
 
-let stdlib = [%str 
+    type (_, _) big_map
 
-type nat = nativeint
+    type (_, _) map
 
-type (_, _) big_map
+    type _ set
 
-type (_, _) map
+    type mutez = nat
 
-type _ set
+    type tez = nat
 
-type mutez = nat
+    type operation
 
-type tez = nat
+    type address
 
-type operation
+    type _ contract
 
-type address
+    let min : nat -> nat -> nat = assert false
+    let abs : int -> nat = assert false
 
-type _ contract
+    module Tezos = struct
+      let level : nat = assert false
 
-let min : nat -> nat -> nat = assert false
-let abs : int -> nat = assert false
+      let amount : tez = assert false
 
-module Tezos = struct
-  let level : nat = assert false
+      let sender : address = assert false
 
-  let amount : tez = assert false
+      let transaction : 'parameter -> mutez -> 'parameter contract -> operation
+          =
+        assert false
 
-  let sender : address = assert false
+      let get_contract_opt : address -> 'parameter contract option =
+        assert false
+    end
 
-  let transaction : 'parameter -> mutez -> 'parameter contract -> operation =
-    assert false
+    module rec Big_map : sig
+      val empty : ('key, 'value) big_map
 
-  let get_contract_opt : address -> 'parameter contract option = assert false
-end
+      val find_opt : 'key -> ('key, 'value) big_map -> 'value option
 
-module rec Big_map : sig
-  val empty : ('key, 'value) big_map
+      val add :
+        'key -> 'value -> ('key, 'value) big_map -> ('key, 'value) big_map
 
-  val find_opt : 'key -> ('key, 'value) big_map -> 'value option
+      val remove : 'key -> ('key, 'value) big_map -> ('key, 'value) big_map
 
-  val add : 'key -> 'value -> ('key, 'value) big_map -> ('key, 'value) big_map
+      val mem : 'key -> ('key, 'value) big_map -> bool
+    end = struct
+      let empty = assert false
 
-  val remove : 'key -> ('key, 'value) big_map -> ('key, 'value) big_map
+      let find_opt = assert false
 
-  val mem : 'key -> ('key, 'value) big_map -> bool
-end = struct
-  let empty = assert false
+      let add = assert false
 
-  let find_opt = assert false
+      let remove = assert false
 
-  let add = assert false
+      let mem = assert false
+    end
 
-  let remove = assert false
+    module rec Set : sig
+      val add : 'el -> 'el set -> 'el set
 
-  let mem = assert false
-end
+      val empty : 'a set
 
-module rec Set : sig
-  val add : 'el -> 'el set -> 'el set
+      val cardinal : 'a set -> nat
 
-  val empty : 'a set
+      val fold : ('acc * 'el -> 'acc) -> 'el set -> 'acc -> 'acc
+    end = struct
+      let add = assert false
 
-  val cardinal : 'a set -> nat
+      let empty = assert false
 
-  val fold : ('acc * 'el -> 'acc) -> 'el set -> 'acc -> 'acc
-end = struct
-  let add = assert false
+      let cardinal = assert false
 
-  let empty = assert false
-
-  let cardinal = assert false
-
-  let fold = assert false
-end
-]
+      let fold = assert false
+    end]
 let env = type_structure env stdlib |> snd
 
-let () = stringify_structure 0 (code |> type_structure env |> fst) |> print_endline
+let () =
+  stringify_structure 0 (code |> type_structure env |> fst) |> print_endline
