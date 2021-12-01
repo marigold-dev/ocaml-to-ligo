@@ -109,9 +109,8 @@ let env =
 
 (* let () = Format.printf "%a\n" Pprintast.structure code *)
 
-let rec get_typed_struct : int -> structure_item_desc -> label list =
- fun indentation struct_item_desc ->
-  match struct_item_desc with
+let rec typed_string_of_struct indentation ({ str_desc = sid; _ } as si) =
+  match sid with
   | Tstr_value (rec', [ vb ]) ->
       let pattern = vb.vb_pat in
 
@@ -138,11 +137,11 @@ let rec get_typed_struct : int -> structure_item_desc -> label list =
           };
         _;
       } ->
-      [
-        Format.asprintf "module %s = struct \n%s end" a
-          (stringify_structure (indentation + 1) struc.str_items);
-      ]
-  | _ -> failwith "Not implemented"
+      Format.asprintf "module %s = struct \n%s end" a
+        (stringify_structure (indentation + 1) struc.str_items)
+  | _ ->
+      [ Untypeast.default_mapper.structure_item Untypeast.default_mapper si ]
+      |> Pprintast.string_of_structure
 
 and stringify_structure : int -> Typedtree.structure_item list -> string =
  fun indentation struc ->
@@ -153,9 +152,7 @@ and stringify_structure : int -> Typedtree.structure_item list -> string =
     | _ -> assert false
   in
   struc
-  |> List.map (fun si -> si.str_desc)
-  |> List.map (get_typed_struct indentation)
-  |> List.flatten
+  |> List.map (typed_string_of_struct indentation)
   |> List.map (( ^ ) (repeat (indentation * 2) " "))
   |> String.concat "\n"
 
@@ -187,7 +184,7 @@ let code =
     let add a = a + 1
     let rec add' (a, b) = a + b
 
-    let fn l = match l with [] -> 1 | h :: t -> h + 1
+    type my_variant = VarA | VarB
 
     module M : sig
       val a : int
