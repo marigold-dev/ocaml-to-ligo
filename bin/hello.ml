@@ -51,75 +51,19 @@ let rec to_expression expr =
       {
         arg_label = Nolabel;
         (* TODO: what is this??? *)
-        param;
+        param=_;
         cases =
           [
             {
-              c_lhs =
-                {
-                  pat_desc = Tpat_var (param', _);
-                  pat_loc = _;
-                  pat_extra = [];
-                  pat_type;
-                  pat_env = _;
-                  pat_attributes = [];
-                };
+              c_lhs = pattern;
               c_guard = None;
               c_rhs = body;
             };
           ];
         partial = Total;
       } ->
-      assert (param = param');
-      let param =
-        Pat.constraint_
-          (Pat.var (mkloc (Ident.name param)))
-          (to_coretype pat_type)
-      in
-      Exp.fun_ Nolabel None param (to_expression body)
-  | Texp_function
-      {
-        arg_label = Nolabel;
-        (* TODO: what is this??? *)
-        param = _;
-        cases =
-          [
-            {
-              c_lhs =
-                {
-                  pat_desc = Tpat_tuple params;
-                  pat_loc = p;
-                  pat_extra = [];
-                  pat_type = _;
-                  pat_env = _;
-                  pat_attributes = [];
-                };
-              c_guard = None;
-              c_rhs = body;
-            };
-          ];
-        partial = Total;
-      } ->
-      let params =
-        List.map
-          (function
-            | Typedtree.{ pat_desc = Tpat_var (param, _); pat_type; _ } ->
-                Pat.constraint_
-                  (Pat.var (mkloc (Ident.name param)))
-                  (to_coretype pat_type)
-            | _ ->
-                let pexpr = Untypeast.untype_expression expr in
-                unimplemented Pprintast.expression pexpr __LINE__)
-          params
-      in
-      Exp.fun_ Nolabel None
-        {
-          ppat_desc = Ppat_tuple params;
-          ppat_loc = p;
-          ppat_loc_stack = [];
-          ppat_attributes = [];
-        }
-        (to_expression body)
+      let pattern = Pat.constraint_ (Untypeast.untype_pattern pattern) (to_coretype pattern.pat_type) in
+      Exp.fun_ Nolabel None pattern (to_expression body)
   | Texp_function _ ->
       let pexpr = Untypeast.untype_expression expr in
       let () =
@@ -166,11 +110,14 @@ let loc = Location.none
 
 let code = [%str 
 
-let rec add (a, b) = a + b
+let a = 1
+let add a = a + 1
+let rec add' (a, b) = a + b
 
 module M = struct
   let a = 1
 end
+
 ]
 
 let env =
