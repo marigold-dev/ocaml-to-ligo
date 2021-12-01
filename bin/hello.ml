@@ -83,6 +83,9 @@ let rec to_expression expr =
                })
       in
       Exp.match_ (untype_expression exp) match_cases
+  | Texp_ifthenelse (if_, then_, else_) ->
+      Exp.ifthenelse (untype_expression if_) (untype_expression then_)
+        (Option.map untype_expression else_)
   | _ ->
       let pexpr = Untypeast.untype_expression expr in
       unimplemented Pprintast.expression pexpr __LINE__
@@ -116,13 +119,11 @@ let rec get_typed_struct : int -> structure_item_desc -> label list =
 
       let expr_type = vb.vb_expr.exp_type in
 
-      [
-        Format.asprintf "let %s %a : %a = %a\n"
-          (if rec' = Recursive then "rec" else "")
-          Pprintast.pattern
-          (Untypeast.untype_pattern pattern)
-          Printtyp.type_expr expr_type Pprintast.expression expr;
-      ]
+      Format.asprintf "let %s%a : %a = %a\n"
+        (if rec' = Recursive then "rec " else "")
+        Pprintast.pattern
+        (Untypeast.untype_pattern pattern)
+        Printtyp.type_expr expr_type Pprintast.expression expr
   | Tstr_value (_, _) -> failwith "let ... and not implemented "
   | Tstr_module
       {
