@@ -43,40 +43,31 @@ and ct_desc_of_te te =
   | Tlink typ | Tsubst typ -> ct_desc_of_te typ
   | _ -> unimplemented Printtyp.type_expr te __LINE__
 
-let to_constant constant =
-  match constant with
-  | Const_int n -> Parsetree.Pconst_integer (string_of_int n, None)
-  | _ -> failwith "TODO: constants not implemented"
-
-let tconstrain_pattern pattern =
-  Pat.constraint_ (Untypeast.untype_pattern pattern) (ct_of_te pattern.pat_type)
-
-
-let rec untype_expression_expanded mapper expr =
-  let recurse = Untypeast.(mapper.expr) mapper in
-  let open Typedtree in
-  match expr.exp_desc with
-  | Texp_function { arg_label; param = _; cases; partial = _ } ->
-      let pattern, guard, body =
-        match cases with
-        | [ { c_lhs; c_guard; c_rhs } ] ->
-            (tconstrain_pattern c_lhs, c_guard, c_rhs)
-        | _ ->
-            let pexpr = untype_expression expr in
-            Format.printf "function not supported. Representation is %a\n"
-              (Printast.expression 0) pexpr;
-            unimplemented Pprintast.expression pexpr __LINE__
-      in
-      Exp.fun_ arg_label (Option.map recurse guard) pattern (recurse body)
-  | _ ->
-      Untypeast.default_mapper.expr mapper expr
-
-and to_arg arg =
-  match arg with
-  | Nolabel, Some expr -> (Nolabel, untype_expression_expanded mapper expr)
-  | _ -> failwith "TODO: implement this"
-
-and mapper = { Untypeast.default_mapper with expr = untype_expression_expanded }
+and mapper =
+  let tconstrain_pattern pattern =
+    Pat.constraint_
+      (Untypeast.untype_pattern pattern)
+      (ct_of_te pattern.pat_type)
+  in
+  let untype_expression_expanded mapper expr =
+    let recurse = Untypeast.(mapper.expr) mapper in
+    let open Typedtree in
+    match expr.exp_desc with
+    | Texp_function { arg_label; param = _; cases; partial = _ } ->
+        let pattern, guard, body =
+          match cases with
+          | [ { c_lhs; c_guard; c_rhs } ] ->
+              (tconstrain_pattern c_lhs, c_guard, c_rhs)
+          | _ ->
+              let pexpr = untype_expression expr in
+              Format.printf "function not supported. Representation is %a\n"
+                (Printast.expression 0) pexpr;
+              unimplemented Pprintast.expression pexpr __LINE__
+        in
+        Exp.fun_ arg_label (Option.map recurse guard) pattern (recurse body)
+    | _ -> Untypeast.default_mapper.expr mapper expr
+  in
+  { Untypeast.default_mapper with expr = untype_expression_expanded }
 
 and untype_expression a = Untypeast.untype_expression ~mapper a
 
@@ -100,7 +91,7 @@ let rec typed_string_of_struct indentation
   | Tstr_value (rec', [ vb ]) ->
       let pattern = vb.vb_pat in
 
-      let expr = vb.vb_expr |> untype_expression_expanded mapper in
+      let expr = vb.vb_expr |> mapper.expr mapper in
 
       let expr_type = vb.vb_expr.exp_type in
 
