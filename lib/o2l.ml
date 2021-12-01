@@ -56,7 +56,8 @@ and mapper =
               pvb_expr = recurse vb.vb_expr;
               pvb_attributes = vb.vb_attributes;
               pvb_loc = vb.vb_loc;
-            } in
+            }
+        in
         Exp.let_ rec' [ untyped_value_binding ] (recurse e)
     | Texp_function { arg_label; param = _; cases; partial = _ } ->
         let pattern, guard, body =
@@ -75,8 +76,19 @@ and mapper =
   let untype_structure_item_expanded (mapper : Untypeast.mapper) structure :
       Parsetree.structure_item =
     match structure with
-    | Typedtree.{ str_desc = Tstr_module { mb_name; mb_expr; _ }; _ } ->
-        Str.module_ (Mb.mk mb_name (mapper.module_expr mapper mb_expr))
+    | Typedtree.
+        {
+          str_desc =
+            Tstr_module
+              {
+                mb_name;
+                mb_expr =
+                  { mod_desc = Tmod_constraint ((_ as mod_expr), _, _, _); _ };
+                _;
+              };
+          _; 
+        } ->
+        mod_expr |> mapper.module_expr mapper |> Mb.mk mb_name |> Str.module_
     | m -> Untypeast.default_mapper.structure_item mapper m
   in
   let untype_structure_expanded mapper Typedtree.{ str_items; _ } =
@@ -93,9 +105,7 @@ and untype_expression a = Untypeast.untype_expression ~mapper a
 
 let loc = Location.none
 
-
-let rec typed_string_of_struct
-    (Typedtree.{ str_desc = sid; _ } as si) =
+let rec typed_string_of_struct (Typedtree.{ str_desc = sid; _ } as si) =
   match sid with
   | Tstr_value (rec', [ vb ]) ->
       let pattern = vb.vb_pat in
@@ -111,15 +121,11 @@ let rec typed_string_of_struct
         Printtyp.type_expr expr_type Pprintast.expression expr
   | Tstr_value (_, _) -> failwith "let ... and not implemented "
   | _ ->
-      [ mapper.structure_item mapper si ]
-      |> Pprintast.string_of_structure 
-      |> (fun m -> m ^ "\n") 
+      [ mapper.structure_item mapper si ] |> Pprintast.string_of_structure
+      |> fun m -> m ^ "\n"
 
 and stringify_structure : Typedtree.structure_item list -> string =
- fun struc ->
-  struc
-  |> List.map (typed_string_of_struct)
-  |> String.concat ""
+ fun struc -> struc |> List.map typed_string_of_struct |> String.concat ""
 
 let type_structure env structure =
   match
