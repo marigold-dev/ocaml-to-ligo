@@ -43,7 +43,12 @@ let to_constant constant =
   | Const_int n -> Pconst_integer (string_of_int n, None)
   | _ -> failwith "TODO: constants not implemented"
 
-let rec to_expression expr =
+let rec untype_pattern pattern =
+  Pat.constraint_
+    (Untypeast.untype_pattern pattern)
+    (to_coretype pattern.pat_type)
+
+and to_expression expr =
   match expr.exp_desc with
   | Texp_ident (_, lident, _) -> Exp.ident lident
   | Texp_constant constant -> Exp.constant (to_constant constant)
@@ -55,11 +60,7 @@ let rec to_expression expr =
         cases = [ { c_lhs = pattern; c_guard = None; c_rhs = body } ];
         partial = Total;
       } ->
-      let pattern =
-        Pat.constraint_
-          (Untypeast.untype_pattern pattern)
-          (to_coretype pattern.pat_type)
-      in
+      let pattern = untype_pattern pattern in
       Exp.fun_ Nolabel None pattern (to_expression body)
   | Texp_function _ ->
       let pexpr = Untypeast.untype_expression expr in
@@ -129,49 +130,44 @@ let env =
 
 (* let () = Format.printf "%a\n" Pprintast.structure code *)
 
-let rec get_typed_struct indentation struct_item_desc =
+let rec get_typed_struct : int -> structure_item_desc -> label list =
+ fun indentation struct_item_desc ->
   match struct_item_desc with
-  | Pstr_value (rec', [ vb ]) ->
-      let pattern = vb.pvb_pat in
+  | Tstr_value (rec', [ vb ]) ->
+      let pattern = vb.vb_pat in
 
-      let expr = vb.pvb_expr |> Typecore.type_exp env |> to_expression in
+      let expr = vb.vb_expr |> to_expression in
 
-      let expr_type =
-        Typecore.type_exp env vb.pvb_expr |> fun e -> e.exp_type
-      in
+      let expr_type = Typecore.type_exp env expr |> fun e -> e.exp_type in
 
       [
         Format.asprintf "let %s%a : %a = %a\n"
           (if rec' = Recursive then "rec " else "")
-          Pprintast.pattern pattern Printtyp.type_expr expr_type
-          Pprintast.expression expr;
+          Pprintast.pattern (untype_pattern pattern) Printtyp.type_expr
+          expr_type Pprintast.expression expr;
       ]
-  | Pstr_value (_, _) -> failwith "let ... and not implemented "
-  | Pstr_module
+  | Tstr_value (_, _) -> failwith "let ... and not implemented "
+  | Tstr_module
       {
-        pmb_name = { txt = Some a; _ };
-        pmb_expr =
+        mb_name = { txt = Some a; _ };
+        mb_expr =
           {
-            pmod_desc =
-              ( Pmod_structure struc
-              | Pmod_constraint
-                  ( {
-                      pmod_desc =
-                         Pmod_structure struc ;
-                        _
-                    },
-                    _ ) );
+            mod_desc =
+              ( Tmod_structure struc
+              | Tmod_constraint ({ mod_desc = Tmod_structure struc; _ }, _, _, _)
+                );
             _;
           };
         _;
       } ->
       [
         Format.asprintf "module %s = struct \n%s end" a
-          (stringify_structure (indentation + 1) struc);
+          (stringify_structure (indentation + 1) struc.str_items);
       ]
   | _ -> failwith "Not implemented"
 
-and stringify_structure indentation struc =
+and stringify_structure : int -> Typedtree.structure_item list -> string =
+ fun indentation struc ->
   let rec repeat n s =
     match n with
     | 0 -> ""
@@ -179,13 +175,31 @@ and stringify_structure indentation struc =
     | _ -> assert false
   in
   struc
-  |> List.map (fun si -> si.pstr_desc)
+  |> List.map (fun si -> si.str_desc)
   |> List.map (get_typed_struct indentation)
   |> List.flatten
   |> List.map (( ^ ) (repeat (indentation * 2) " "))
   |> String.concat "\n"
+
+let type_structure structure =
+  match
+    !Typecore.type_module env
+      {
+        pmod_desc = Pmod_structure structure;
+        pmod_loc =
+          {
+            loc_start = Lexing.dummy_pos;
+            loc_end = Lexing.dummy_pos;
+            loc_ghost = true;
+          };
+        pmod_attributes = [];
+      }
+  with
+  | { mod_desc = Tmod_structure { str_items = module_expr; _ }; _ } ->
+      module_expr
+  | _ -> failwith "impossible"
 (* let tcode = Typecore.type_exp env code *)
 
 (* let scode = to_expression tcode |> Format.printf "%a\n%!" Pprintast.expression *)
 
-let () = stringify_structure 0 code |> print_endline
+let () = stringify_structure 0 (code |> type_structure) |> print_endline
