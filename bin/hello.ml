@@ -47,27 +47,24 @@ let rec to_expression expr =
   match expr.exp_desc with
   | Texp_ident (_, lident, _) -> Exp.ident lident
   | Texp_constant constant -> Exp.constant (to_constant constant)
-  | Texp_function
-      {
-        arg_label = Nolabel;
-        (* TODO: what is this??? *)
-        param = _;
-        cases = [ { c_lhs = pattern; c_guard = None; c_rhs = body } ];
-        partial = Total;
-      } ->
-      let pattern =
-        Pat.constraint_
-          (Untypeast.untype_pattern pattern)
-          (to_coretype pattern.pat_type)
+  | Texp_function { arg_label; param = _; cases; partial = _ } ->
+      let pattern, guard, body =
+        match cases with
+        | [ { c_lhs; c_guard; c_rhs } ] ->
+            ( Pat.constraint_
+                (Untypeast.untype_pattern c_lhs)
+                (to_coretype c_lhs.pat_type),
+              c_guard,
+              c_rhs )
+        | _ ->
+            let pexpr = Untypeast.untype_expression expr in
+            Format.printf "function not supported. Representation is %a\n"
+              (Printast.expression 0) pexpr;
+            unimplemented Pprintast.expression pexpr __LINE__
       in
-      Exp.fun_ Nolabel None pattern (to_expression body)
-  | Texp_function _ ->
-      let pexpr = Untypeast.untype_expression expr in
-      let () =
-        Format.printf "function not supported. Representation is %a\n"
-          (Printast.expression 0) pexpr
-      in
-      unimplemented Pprintast.expression pexpr __LINE__
+      Exp.fun_ arg_label
+        (Option.map to_expression guard)
+        pattern (to_expression body)
   | Texp_apply (funct, args) ->
       let funct = to_expression funct in
       let args = List.map to_arg args in
@@ -154,13 +151,7 @@ let rec get_typed_struct indentation struct_item_desc =
           {
             pmod_desc =
               ( Pmod_structure struc
-              | Pmod_constraint
-                  ( {
-                      pmod_desc =
-                         Pmod_structure struc ;
-                        _
-                    },
-                    _ ) );
+              | Pmod_constraint ({ pmod_desc = Pmod_structure struc; _ }, _) );
             _;
           };
         _;
