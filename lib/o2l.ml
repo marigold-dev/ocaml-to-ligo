@@ -1,7 +1,6 @@
 open Ocaml_common
 open Types
 open Asttypes
-open Ast_helper
 
 let loc = Location.none
 
@@ -51,9 +50,11 @@ and ct_desc_of_te te : Parsetree.core_type_desc option =
   | _ -> unimplemented Printtyp.type_expr te __LINE__
 
 and mapper =
-  let tconstrain_pattern (loc : Warnings.loc) (pattern : 'a Typedtree.general_pattern) =
+  let tconstrain_pattern (loc : Warnings.loc)
+      (pattern : 'a Typedtree.general_pattern) =
     match ct_of_te pattern.pat_type with
-    | Some ct -> Pat.constraint_ (Untypeast.untype_pattern pattern) ct
+    | Some ct ->
+        Ast_helper.Pat.constraint_ (Untypeast.untype_pattern pattern) ct
     | None ->
         failwith
           (Format.asprintf
@@ -77,7 +78,7 @@ and mapper =
               pvb_loc = vb.vb_loc;
             }
         in
-        Exp.let_ rec' [ untyped_value_binding ] (recurse e)
+        Ast_helper.Exp.let_ rec' [ untyped_value_binding ] (recurse e)
     | Texp_function { arg_label; param = _; cases; partial = _ } ->
         let pattern, guard, body =
           match cases with
@@ -89,7 +90,8 @@ and mapper =
                 (Printast.expression 0) pexpr;
               unimplemented Pprintast.expression pexpr __LINE__
         in
-        Exp.fun_ arg_label (Option.map recurse guard) pattern (recurse body)
+        Ast_helper.Exp.fun_ arg_label (Option.map recurse guard) pattern
+          (recurse body)
     | _ -> Untypeast.default_mapper.expr mapper expr
   in
   let untype_structure_item_expanded (mapper : Untypeast.mapper) structure :
@@ -107,7 +109,8 @@ and mapper =
               };
           _;
         } ->
-        mod_expr |> mapper.module_expr mapper |> Mb.mk mb_name |> Str.module_
+        mod_expr |> mapper.module_expr mapper |> Ast_helper.Mb.mk mb_name
+        |> Ast_helper.Str.module_
     | m -> Untypeast.default_mapper.structure_item mapper m
   in
   let untype_structure_expanded mapper Typedtree.{ str_items; _ } =
@@ -124,7 +127,38 @@ and untype_expression a = Untypeast.untype_expression ~mapper a
 
 let loc = Location.none
 
-let rec typed_string_of_struct (Typedtree.{ str_desc = sid; _ } as si) =
+let rec string_of_expr expr =
+  let parentheses_pattern = Str.regexp "[)(]" in
+  let remove_parens = Str.global_replace parentheses_pattern "" in
+  let open Parsetree in
+  match expr.pexp_desc with
+  | Pexp_let (rec', [ vb ], e) ->
+      let pattern_string =
+        vb.pvb_pat |> Format.asprintf "%a" Pprintast.pattern |> remove_parens
+      in
+      let expr = vb.pvb_expr in
+
+      Format.sprintf "let %s%s = %s in %s"
+        (if rec' = Recursive then "rec " else "")
+        pattern_string (string_of_expr expr) (string_of_expr e)
+  | Pexp_fun (arg_label, default_arg, pattern, e) ->
+      (* Print the lambda but stringify the body with this function, recursively *)
+      let arg_pattern =
+        match (arg_label, default_arg) with
+        | Nolabel, _ -> Format.asprintf "%a" Pprintast.pattern pattern
+        | Labelled l, _ -> Format.asprintf "~%s:%a" l Pprintast.pattern pattern
+        | Optional l, None ->
+            Format.asprintf "?%s:%a" l Pprintast.pattern pattern
+        | Optional l, Some default ->
+            Format.asprintf "?%s:(%a = %s)" l Pprintast.pattern pattern
+              (string_of_expr default)
+      in
+      Format.sprintf "fun %s -> %s" arg_pattern (string_of_expr e)
+  | _ ->
+      Printf.printf "Defaulting for %s\n" (Pprintast.string_of_expression expr);
+      Pprintast.string_of_expression expr
+
+let typed_string_of_struct (Typedtree.{ str_desc = sid; _ } as si) =
   match sid with
   | Tstr_value (rec', [ vb ]) ->
       let pattern = vb.vb_pat in
@@ -133,18 +167,17 @@ let rec typed_string_of_struct (Typedtree.{ str_desc = sid; _ } as si) =
 
       let expr_type = vb.vb_expr.exp_type in
 
-      Format.asprintf "let %s%a : %a = %a\n"
+      Format.asprintf "let %s%a : %a = %s\n"
         (if rec' = Recursive then "rec " else "")
         Pprintast.pattern
         (Untypeast.untype_pattern pattern)
-        Printtyp.type_expr expr_type Pprintast.expression expr
+        Printtyp.type_expr expr_type (string_of_expr expr)
   | Tstr_value (_, _) -> failwith "let ... and not implemented "
   | _ ->
-      [ mapper.structure_item mapper si ] |> Pprintast.string_of_structure
-      |> fun m -> m ^ "\n"
+      Pprintast.string_of_structure [ mapper.structure_item mapper si ] ^ "\n"
 
-and stringify_structure : Typedtree.structure_item list -> string =
- fun struc -> struc |> List.map typed_string_of_struct |> String.concat ""
+let typed_string_of_code sil =
+  sil |> List.map typed_string_of_struct |> String.concat "\n"
 
 let type_structure env structure =
   match
