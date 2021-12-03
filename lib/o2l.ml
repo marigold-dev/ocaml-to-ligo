@@ -131,6 +131,7 @@ and mapper =
           _;
         } ->        mod_expr |> mapper.module_expr mapper |> Ast_helper.Mb.mk mb_name
         |> Ast_helper.Str.module_
+        (*
     | Typedtree.{ str_desc = Tstr_value (recflag, value_bindings); _ } ->
         let value_bindings =
           List.map
@@ -142,7 +143,7 @@ and mapper =
                 })
             value_bindings
         in
-        value_bindings |> Ast_helper.Str.value recflag
+        value_bindings |> Ast_helper.Str.value recflag*)
     | m -> Untypeast.default_mapper.structure_item mapper m
   in
   let untype_structure_expanded mapper Typedtree.{ str_items; _ } =
