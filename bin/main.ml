@@ -164,10 +164,12 @@ let env =
   Compmisc.initial_env ()
 
 (* Inject the defined stdlib into the environment via type_structure *)
-let env = O2l.type_structure env stdlib |> snd
+let env = O2l.type_structure ~env stdlib |> snd
 
 (* Pass the AST generated from the input to type_structure using the generated env.
    Extract the structure item list and stringify it, then print the result *)
 let () =
-  code |> O2l.type_structure env |> fst |> O2l.typed_string_of_code
+  (* Sys.argv.(1) (* .ml file to convert to .mligo *)
+     |> Pparse.parse_implementation ~tool_name:"O2L" *)
+  code |> O2l.type_structure ~env |> fst |> O2l.typed_string_of_code
   |> print_endline

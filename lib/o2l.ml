@@ -49,7 +49,12 @@ and ct_desc_of_te te : Parsetree.core_type_desc option =
   | Tvar _ -> None
   | _ -> unimplemented Printtyp.type_expr te __LINE__
 
+(* Defines a custom "mapper" that transforms any Typedtree type
+   to its corresponding Parsetree type, but with explicit types *)
 and mapper =
+  (* Takes a Typedtree pattern and transforms it into
+     a corresponding Parsetree pattern that's "constrained",
+     i.e. includes an explicit type annotation *)
   let tconstrain_pattern (loc : Warnings.loc)
       (pattern : 'a Typedtree.general_pattern) =
     match ct_of_te pattern.pat_type with
@@ -158,6 +163,8 @@ let rec string_of_expr expr =
       Printf.printf "Defaulting for %s\n" (Pprintast.string_of_expression expr);
       Pprintast.string_of_expression expr
 
+(* Type constrains a structure item and converts it to a
+   string of valid LIGO code *)
 let typed_string_of_struct (Typedtree.{ str_desc = sid; _ } as si) =
   match sid with
   | Tstr_value (rec', [ vb ]) ->
@@ -176,10 +183,18 @@ let typed_string_of_struct (Typedtree.{ str_desc = sid; _ } as si) =
   | _ ->
       Pprintast.string_of_structure [ mapper.structure_item mapper si ] ^ "\n"
 
+(* User facing function that maps typed_string_of_struct to a list
+   of structure items and joins them with newlines. Essentially this
+   processes an arbitrary snippet of OCaml code *)
 let typed_string_of_code sil =
   sil |> List.map typed_string_of_struct |> String.concat "\n"
 
-let type_structure env structure =
+(* Default environment *)
+let env =
+  Compmisc.init_path ();
+  Compmisc.initial_env ()
+
+let type_structure ?(env = env) structure =
   match
     !Typecore.type_module env
       {
