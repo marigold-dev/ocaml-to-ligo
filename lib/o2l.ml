@@ -24,27 +24,46 @@ let unimplemented pp value loc =
 
 let to_lident path = mkloc (Untypeast.lident_of_path path)
 
-let rec ct_of_te typ = ct_of_desc (ct_desc_of_te typ)
+let rec ct_of_te typ = Option.map ct_of_desc (ct_desc_of_te typ)
 
-and ct_desc_of_te te =
+and ct_desc_of_te te : Parsetree.core_type_desc option =
+  let ( let* ) = Option.bind in
+  let rec mapM f = function
+    | [] -> Some []
+    | x :: y ->
+        let* x = f x in
+        let* y = mapM f y in
+        Some (x :: y)
+  in
   match te.desc with
   | Tarrow (label, param, body, _) ->
-      let param = ct_of_te param in
-      let body = ct_of_te body in
-      Ptyp_arrow (label, param, body)
-  | Ttuple ts -> Ptyp_tuple (List.map ct_of_te ts)
+      let* param = ct_of_te param in
+      let* body = ct_of_te body in
+      Some (Parsetree.Ptyp_arrow (label, param, body))
+  | Ttuple ts ->
+      let* ts = mapM ct_of_te ts in
+      Some (Parsetree.Ptyp_tuple ts)
   | Tconstr (path, args, _) ->
-      Ptyp_constr (to_lident path, List.map ct_of_te args)
+      let* args = mapM ct_of_te args in
+      Some (Parsetree.Ptyp_constr (to_lident path, args))
   | Tlink typ | Tsubst typ -> ct_desc_of_te typ
+  | Tvar _ -> None
   | _ -> unimplemented Printtyp.type_expr te __LINE__
 
 and mapper =
-  let tconstrain_pattern pattern =
-    Pat.constraint_
-      (Untypeast.untype_pattern pattern)
-      (ct_of_te pattern.pat_type)
+  let tconstrain_pattern (loc : Warnings.loc) (pattern : 'a Typedtree.general_pattern) =
+    match ct_of_te pattern.pat_type with
+    | Some ct -> Pat.constraint_ (Untypeast.untype_pattern pattern) ct
+    | None ->
+        failwith
+          (Format.asprintf
+             "You have a type variable at %a, you must give it an annotation \
+              of a concrete type"
+             Location.print_loc loc)
   in
   let untype_expression_expanded mapper expr =
+    let loc = Typedtree.(expr.exp_loc) in
+    let tconstrain_pattern = tconstrain_pattern loc in
     let recurse = Untypeast.(mapper.expr) mapper in
     let open Typedtree in
     match expr.exp_desc with
@@ -86,7 +105,7 @@ and mapper =
                   { mod_desc = Tmod_constraint ((_ as mod_expr), _, _, _); _ };
                 _;
               };
-          _; 
+          _;
         } ->
         mod_expr |> mapper.module_expr mapper |> Mb.mk mb_name |> Str.module_
     | m -> Untypeast.default_mapper.structure_item mapper m
