@@ -1,6 +1,6 @@
 (library
  (name O2L)
- (libraries ocaml-compiler-libs.common)
+ (libraries ocaml-compiler-libs.common str)
  (preprocess
   (pps ppxlib.metaquot))
  (wrapped false))

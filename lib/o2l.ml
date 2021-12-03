@@ -1,6 +1,5 @@
 open Ocaml_common
 open Types
-open Ast_helper
 
 let loc = Location.none
 
@@ -66,11 +65,17 @@ and ct_desc_of_te te : Parsetree.core_type_desc option =
   | Tpackage _ -> failwith "Tpackage"
   *)
 
+(* Defines a custom "mapper" that transforms any Typedtree type
+   to its corresponding Parsetree type, but with explicit types *)
 and mapper =
+  (* Takes a Typedtree pattern and transforms it into
+     a corresponding Parsetree pattern that's "constrained",
+     i.e. includes an explicit type annotation *)
   let tconstrain_pattern (loc : Warnings.loc)
       (pattern : 'a Typedtree.general_pattern) =
     match ct_of_te pattern.pat_type with
-    | Some ct -> Pat.constraint_ (Untypeast.untype_pattern pattern) ct
+    | Some ct ->
+        Ast_helper.Pat.constraint_ (Untypeast.untype_pattern pattern) ct
     | None ->
         failwith
           (Format.asprintf
@@ -94,7 +99,7 @@ and mapper =
               pvb_loc = vb.vb_loc;
             }
         in
-        Exp.let_ rec' [ untyped_value_binding ] (recurse e)
+        Ast_helper.Exp.let_ rec' [ untyped_value_binding ] (recurse e)
     | Texp_function { arg_label; param = _; cases; partial = _ } ->
         let pattern, guard, body =
           match cases with
@@ -106,7 +111,8 @@ and mapper =
                 (Printast.expression 0) pexpr;
               unimplemented Pprintast.expression pexpr __LINE__
         in
-        Exp.fun_ arg_label (Option.map recurse guard) pattern (recurse body)
+        Ast_helper.Exp.fun_ arg_label (Option.map recurse guard) pattern
+          (recurse body)
     | _ -> Untypeast.default_mapper.expr mapper expr
   in
   let untype_structure_item_expanded (mapper : Untypeast.mapper) structure :
@@ -123,8 +129,8 @@ and mapper =
                 _;
               };
           _;
-        } ->
-        mod_expr |> mapper.module_expr mapper |> Mb.mk mb_name |> Str.module_
+        } ->        mod_expr |> mapper.module_expr mapper |> Ast_helper.Mb.mk mb_name
+        |> Ast_helper.Str.module_
     | Typedtree.{ str_desc = Tstr_value (recflag, value_bindings); _ } ->
         let value_bindings =
           List.map
@@ -136,7 +142,7 @@ and mapper =
                 })
             value_bindings
         in
-        value_bindings |> Str.value recflag
+        value_bindings |> Ast_helper.Str.value recflag
     | m -> Untypeast.default_mapper.structure_item mapper m
   in
   let untype_structure_expanded mapper Typedtree.{ str_items; _ } =
@@ -151,12 +157,11 @@ and mapper =
 
 and untype_expression a = Untypeast.untype_expression ~mapper a
 
-let loc = Location.none
 
-and stringify_structure : Typedtree.structure -> string =
+and typed_string_of_code : Typedtree.structure -> string =
  fun struc -> struc |> mapper.structure mapper |> Format.asprintf "%a" Pprintast.structure 
 
-let type_structure env structure =
+let type_structure ~env structure =
   match
     !Typecore.type_module env
       {
@@ -190,3 +195,4 @@ let type_structure env structure =
       | Tmod_apply _ -> failwith "Tmod_apply impossible"
       | Tmod_constraint _ -> failwith "Tmod_constraint impossible"
       | Tmod_unpack _ -> failwith "Tmod_unpack impossible")
+
