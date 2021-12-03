@@ -1,6 +1,5 @@
 open Ocaml_common
 open Types
-open Asttypes
 open Ast_helper
 
 let loc = Location.none
@@ -48,17 +47,35 @@ and ct_desc_of_te te : Parsetree.core_type_desc option =
       Some (Parsetree.Ptyp_constr (to_lident path, args))
   | Tlink typ | Tsubst typ -> ct_desc_of_te typ
   | Tvar _ -> None
-  | _ -> unimplemented Printtyp.type_expr te __LINE__
+  | Tpoly (expr, _) -> let* expr = ct_of_te expr in Some (Parsetree.Ptyp_poly ([], expr))
+  | Tobject _ -> let () = Printf.printf "Tobject\n" in unimplemented Printtyp.type_expr te __LINE__
+  | Tfield _ -> let () = Printf.printf "Tfield\n" in unimplemented Printtyp.type_expr te __LINE__
+  | Tnil -> let () = Printf.printf "Tnil\n" in unimplemented Printtyp.type_expr te __LINE__
+  | Tvariant _ -> let () = Printf.printf "Tvariant\n" in unimplemented Printtyp.type_expr te __LINE__
+  | Tunivar _ -> let () = Printf.printf "Tunivar\n" in unimplemented Printtyp.type_expr te __LINE__
+  | Tpackage _ -> let () = Printf.printf "Tpackage\n" in unimplemented Printtyp.type_expr te __LINE__
+  
+  (*
+  | Tlink typ | Tsubst typ -> ct_desc_of_te typ
+  | Tvar _ -> None
+  | Tobject _ -> failwith "Tobject"
+  | Tfield _ -> failwith "Tfield"
+  | Tnil -> failwith "Tnil"
+  | Tvariant _ -> failwith "Tvariant"
+  | Tunivar _ -> failwith "Tunivar"
+  | Tpackage _ -> failwith "Tpackage"
+  *)
 
 and mapper =
-  let tconstrain_pattern (loc : Warnings.loc) (pattern : 'a Typedtree.general_pattern) =
+  let tconstrain_pattern (loc : Warnings.loc)
+      (pattern : 'a Typedtree.general_pattern) =
     match ct_of_te pattern.pat_type with
     | Some ct -> Pat.constraint_ (Untypeast.untype_pattern pattern) ct
     | None ->
         failwith
           (Format.asprintf
-             "You have a type variable at %a, you must give it an annotation \
-              of a concrete type"
+             "You have a type variable at %a, you must annotate it with \
+              a concrete type"
              Location.print_loc loc)
   in
   let untype_expression_expanded mapper expr =
@@ -108,6 +125,18 @@ and mapper =
           _;
         } ->
         mod_expr |> mapper.module_expr mapper |> Mb.mk mb_name |> Str.module_
+    | Typedtree.{ str_desc = Tstr_value (recflag, value_bindings); _ } ->
+        let value_bindings =
+          List.map
+            (fun binding ->
+              Parsetree.
+                {
+                  (mapper.value_binding mapper binding) with
+                  pvb_pat = tconstrain_pattern binding.vb_loc binding.vb_pat;
+                })
+            value_bindings
+        in
+        value_bindings |> Str.value recflag
     | m -> Untypeast.default_mapper.structure_item mapper m
   in
   let untype_structure_expanded mapper Typedtree.{ str_items; _ } =
@@ -124,27 +153,8 @@ and untype_expression a = Untypeast.untype_expression ~mapper a
 
 let loc = Location.none
 
-let rec typed_string_of_struct (Typedtree.{ str_desc = sid; _ } as si) =
-  match sid with
-  | Tstr_value (rec', [ vb ]) ->
-      let pattern = vb.vb_pat in
-
-      let expr = vb.vb_expr |> mapper.expr mapper in
-
-      let expr_type = vb.vb_expr.exp_type in
-
-      Format.asprintf "let %s%a : %a = %a\n"
-        (if rec' = Recursive then "rec " else "")
-        Pprintast.pattern
-        (Untypeast.untype_pattern pattern)
-        Printtyp.type_expr expr_type Pprintast.expression expr
-  | Tstr_value (_, _) -> failwith "let ... and not implemented "
-  | _ ->
-      [ mapper.structure_item mapper si ] |> Pprintast.string_of_structure
-      |> fun m -> m ^ "\n"
-
-and stringify_structure : Typedtree.structure_item list -> string =
- fun struc -> struc |> List.map typed_string_of_struct |> String.concat ""
+and stringify_structure : Typedtree.structure -> string =
+ fun struc -> struc |> mapper.structure mapper |> Format.asprintf "%a" Pprintast.structure 
 
 let type_structure env structure =
   match
@@ -160,18 +170,18 @@ let type_structure env structure =
         pmod_attributes = [];
       }
   with
-  | { mod_desc = Tmod_structure { str_items = struc; str_final_env; _ }; _ } ->
-      (struc, str_final_env)
+  | { mod_desc = Tmod_structure ({ str_final_env; _ } as structure); _ } ->
+      (structure, str_final_env)
   | {
    mod_desc =
      Tmod_constraint
-       ( { mod_desc = Tmod_structure { str_items = struc; str_final_env; _ }; _ },
+       ( { mod_desc = Tmod_structure ({  str_final_env; _ } as structure); _ },
          _,
          _,
          _ );
    _;
   } ->
-      (struc, str_final_env)
+      (structure, str_final_env)
   | { mod_desc; _ } -> (
       match mod_desc with
       | Tmod_ident _ -> failwith "Tmod_ident impossible"
