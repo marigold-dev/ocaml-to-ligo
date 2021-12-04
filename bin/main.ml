@@ -68,6 +68,9 @@ end = struct
   let has_stake (address : address) (t : t) = Big_map.mem address t
 end
 
+let a : int = let b = 1 in b
+let c = let d : int = 1 in d
+let e = Collateral_vault.has_stake
 ]
 
 let stdlib =

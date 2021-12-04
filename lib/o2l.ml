@@ -104,27 +104,59 @@ and mapper =
                  Location.print_loc pattern.pat_loc))
   in
   let untype_expression_expanded mapper expr =
-    let recurse = Untypeast.(mapper.expr) mapper in
     let open Typedtree in
+    let open Untypeast in
+    let recurse = mapper.expr mapper in
     match expr.exp_desc with
-    | Texp_let (rec', [ vb ], e) ->
-        let untyped_value_binding =
-          Parsetree.
+    | Texp_let (rec', vbs, e) ->
+        let vbs =
+          List.map
+            (function
+              | Typedtree.{ vb_pat = { pat_extra; _ }; _ } as vb
+                when (not
+                        (List.for_all
+                           (function
+                             | Tpat_constraint _, _, _ -> false | _ -> true)
+                           pat_extra))
+                     && List.length pat_extra != 0 ->
+                  mapper.value_binding mapper vb
+              | vb -> (
+                  let vb_untyped = mapper.value_binding mapper vb in
+                  match ct_of_te vb.vb_expr.exp_type with
+                  | Some ct ->
+                      {
+                        vb_untyped with
+                        pvb_pat =
+                          {
+                            vb_untyped.pvb_pat with
+                            ppat_desc =
+                              Ppat_constraint
+                                ( vb_untyped.pvb_pat,
+                                  Parsetree.Ptyp_poly ([], ct)
+                                  |> Ast_helper.Typ.mk );
+                          };
+                      }
+                  | None ->
+                      failwith
+                        "inferred type was polymorphic, need type annotation \
+                         of an explicit type & better error message"))
+            vbs
+          (*Parsetree.
             {
               pvb_pat = mapper.pat mapper vb.vb_pat;
               pvb_expr = recurse vb.vb_expr;
               pvb_attributes = vb.vb_attributes;
               pvb_loc = vb.vb_loc;
-            }
+            }*)
         in
-        Ast_helper.Exp.let_ rec' [ untyped_value_binding ] (recurse e)
+        Ast_helper.Exp.let_ rec' vbs (recurse e)
     | Texp_function { arg_label; param = _; cases; partial = _ } ->
         let pattern, guard, body =
           match cases with
           | [ { c_lhs; c_guard; c_rhs } ] ->
               (tconstrain_pattern mapper c_lhs, c_guard, c_rhs)
           | _ ->
-              let pexpr = mapper.expr mapper expr in
+              let pexpr = recurse expr in
               Format.printf "function not supported. Representation is %a\n"
                 (Printast.expression 0) pexpr;
               unimplemented Pprintast.expression pexpr __LINE__
@@ -166,12 +198,6 @@ and mapper =
                                 Ppat_constraint
                                   ( untyped_binding.pvb_pat,
                                     Ptyp_poly ([], ct) |> Ast_helper.Typ.mk );
-                            };
-                          pvb_expr =
-                            {
-                              untyped_binding.pvb_expr with
-                              pexp_desc =
-                                Pexp_constraint (untyped_binding.pvb_expr, ct);
                             };
                         }
                   | None ->
