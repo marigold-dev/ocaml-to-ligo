@@ -8,4 +8,4 @@ val typed_string_of_code : Typedtree.structure -> string
    of the type constrained code with the new environment
    after processing the given code. *)
 val type_structure :
-  env:Env.t -> Parsetree.structure -> Typedtree.structure * Env.t
+  ?env:Env.t -> Parsetree.structure -> Typedtree.structure * Env.t

@@ -171,18 +171,6 @@ let env = O2l.type_structure ~env stdlib |> snd
 
 (* Pass the AST generated from the input to type_structure using the generated env.
    Extract the structure item list and stringify it, then print the result *)
-
-
-let () =
-  (* Sys.argv.(1) (* .ml file to convert to .mligo *)
-     |> Pparse.parse_implementation ~tool_name:"O2L" *)
-  code |> Format.printf "%a\n" (Printast.structure 0)  (*|> O2l.type_structure ~env |> |> fst |> O2l.typed_string_of_code
-  |> print_endline*)
-let () =
-  (* Sys.argv.(1) (* .ml file to convert to .mligo *)
-     |> Pparse.parse_implementation ~tool_name:"O2L" *)
-  code |> Format.printf "%a\n|\nV\n" (Pprintast.structure)
-
 let () =
   (* Sys.argv.(1) (* .ml file to convert to .mligo *)
     |> Pparse.parse_implementation ~tool_name:"O2L" *)

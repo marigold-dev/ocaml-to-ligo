@@ -50,22 +50,22 @@ and ct_desc_of_te te : Parsetree.core_type_desc option =
       let* expr = ct_of_te expr in
       Some (Parsetree.Ptyp_poly ([], expr))
   | Tobject _ ->
-      let () = Printf.printf "Tobject\n" in
+      Printf.printf "Tobject\n";
       unimplemented Printtyp.type_expr te __LINE__
   | Tfield _ ->
-      let () = Printf.printf "Tfield\n" in
+      Printf.printf "Tfield\n";
       unimplemented Printtyp.type_expr te __LINE__
   | Tnil ->
-      let () = Printf.printf "Tnil\n" in
+      Printf.printf "Tnil\n";
       unimplemented Printtyp.type_expr te __LINE__
   | Tvariant _ ->
-      let () = Printf.printf "Tvariant\n" in
+      Printf.printf "Tvariant\n";
       unimplemented Printtyp.type_expr te __LINE__
   | Tunivar _ ->
-      let () = Printf.printf "Tunivar\n" in
+      Printf.printf "Tunivar\n";
       unimplemented Printtyp.type_expr te __LINE__
   | Tpackage _ ->
-      let () = Printf.printf "Tpackage\n" in
+      Printf.printf "Tpackage\n";
       unimplemented Printtyp.type_expr te __LINE__
 
 (*
@@ -92,7 +92,7 @@ and mapper =
       =
    fun _mapper pattern ->
     match Untypeast.default_mapper.pat Untypeast.default_mapper pattern with
-    | {ppat_desc=Ppat_constraint _; _} as untyped_pat -> untyped_pat
+    | { ppat_desc = Ppat_constraint _; _ } as untyped_pat -> untyped_pat
     | untyped_pat -> (
         match ct_of_te pattern.pat_type with
         | Some ct -> Ast_helper.Pat.constraint_ untyped_pat ct
@@ -135,22 +135,17 @@ and mapper =
   in
   let untype_structure_item_expanded (mapper : Untypeast.mapper) structure :
       Parsetree.structure_item =
-    match structure with
-    | Typedtree.
+    let open Typedtree in
+    match structure.str_desc with
+    | Tstr_module
         {
-          str_desc =
-            Tstr_module
-              {
-                mb_name;
-                mb_expr =
-                  { mod_desc = Tmod_constraint ((_ as mod_expr), _, _, _); _ };
-                _;
-              };
+          mb_name;
+          mb_expr = { mod_desc = Tmod_constraint ((_ as mod_expr), _, _, _); _ };
           _;
         } ->
         mod_expr |> mapper.module_expr mapper |> Ast_helper.Mb.mk mb_name
         |> Ast_helper.Str.module_
-    | Typedtree.{ str_desc = Tstr_value (recflag, value_bindings); _ } ->
+    | Tstr_value (recflag, value_bindings) ->
         let value_bindings =
           List.map
             (fun binding ->
@@ -188,7 +183,7 @@ and mapper =
             value_bindings
         in
         value_bindings |> Ast_helper.Str.value recflag
-    | m -> Untypeast.default_mapper.structure_item mapper m
+    | _ -> Untypeast.default_mapper.structure_item mapper structure
   in
   let untype_structure_expanded mapper Typedtree.{ str_items; _ } =
     List.map (untype_structure_item_expanded mapper) str_items
@@ -200,12 +195,18 @@ and mapper =
     structure = untype_structure_expanded;
   }
 
-and typed_string_of_code : Typedtree.structure -> string =
- fun struc ->
+(* User facing function that maps typed_string_of_struct to a list
+   of structure items and joins them with newlines. Essentially this
+   processes an arbitrary snippet of OCaml code *)
+let typed_string_of_code struc =
   struc |> mapper.structure mapper |> Format.asprintf "%a" Pprintast.structure
 
-let type_structure ~env structure =
-  match
+let default_environment =
+  Compmisc.init_path ();
+  Compmisc.initial_env ()
+
+let type_structure ?(env = default_environment) structure =
+  let typed_module =
     !Typecore.type_module env
       {
         pmod_desc = Pmod_structure structure;
@@ -217,24 +218,17 @@ let type_structure ~env structure =
           };
         pmod_attributes = [];
       }
-  with
-  | { mod_desc = Tmod_structure ({ str_final_env; _ } as structure); _ } ->
+  in
+  match typed_module.mod_desc with
+  | Tmod_structure ({ str_final_env; _ } as structure)
+  | Tmod_constraint
+      ( { mod_desc = Tmod_structure ({ str_final_env; _ } as structure); _ },
+        _,
+        _,
+        _ ) ->
       (structure, str_final_env)
-  | {
-   mod_desc =
-     Tmod_constraint
-       ( { mod_desc = Tmod_structure ({ str_final_env; _ } as structure); _ },
-         _,
-         _,
-         _ );
-   _;
-  } ->
-      (structure, str_final_env)
-  | { mod_desc; _ } -> (
-      match mod_desc with
-      | Tmod_ident _ -> failwith "Tmod_ident impossible"
-      | Tmod_structure _ -> failwith "Tmod_structure impossible"
-      | Tmod_functor _ -> failwith "Tmod_functor impossible"
-      | Tmod_apply _ -> failwith "Tmod_apply impossible"
-      | Tmod_constraint _ -> failwith "Tmod_constraint impossible"
-      | Tmod_unpack _ -> failwith "Tmod_unpack impossible")
+  | Tmod_ident _ -> failwith "Tmod_ident impossible"
+  | Tmod_functor _ -> failwith "Tmod_functor impossible"
+  | Tmod_apply _ -> failwith "Tmod_apply impossible"
+  | Tmod_constraint _ -> failwith "Tmod_constraint impossible"
+  | Tmod_unpack _ -> failwith "Tmod_unpack impossible"
