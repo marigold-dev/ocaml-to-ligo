@@ -177,5 +177,5 @@ let env = O2l.type_structure ~env stdlib |> snd
 let () =
   (* Sys.argv.(1) (* .ml file to convert to .mligo *)
     |> Pparse.parse_implementation ~tool_name:"O2L" *)
-  code |> O2l.type_structure ~env |> fst |> O2l.typed_string_of_code
+  code |> O2l.type_structure ~env |> fst |> (*O2l.module_erasure |>*) O2l.typed_string_of_code
   |> print_endline

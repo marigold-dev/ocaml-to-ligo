@@ -9,3 +9,7 @@ val typed_string_of_code : Typedtree.structure -> string
    after processing the given code. *)
 val type_structure :
   ?env:Env.t -> Parsetree.structure -> Typedtree.structure * Env.t
+
+(* Removes modules from a structure because modules are very inefficient
+   in ligo. *)
+val module_erasure : Typedtree.structure -> Typedtree.structure

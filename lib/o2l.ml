@@ -163,6 +163,9 @@ and mapper =
         in
         Ast_helper.Exp.fun_ arg_label (Option.map recurse guard) pattern
           (recurse body)
+    | Texp_ident (_, _, _) ->
+        Untypeast.default_mapper.expr mapper expr
+        (* here, we need to rewrite the name using the path, also need to do it in patterns *)
     | _ -> Untypeast.default_mapper.expr mapper expr
   in
   let untype_structure_item_expanded (mapper : Untypeast.mapper) structure :
@@ -172,7 +175,7 @@ and mapper =
     | Tstr_module
         {
           mb_name;
-          mb_expr = { mod_desc = Tmod_constraint ((_ as mod_expr), _, _, _); _ };
+          mb_expr = { mod_desc = Tmod_constraint (mod_expr, _, _, _); _ };
           _;
         } ->
         mod_expr |> mapper.module_expr mapper |> Ast_helper.Mb.mk mb_name
@@ -230,6 +233,51 @@ let typed_string_of_code struc =
 let default_environment =
   Compmisc.init_path ();
   Compmisc.initial_env ()
+
+let module_erasure (structure : Typedtree.structure) =
+  {
+    structure with
+    str_items =
+      structure.str_items
+      |> List.map (function
+           | Typedtree.
+               {
+                 str_desc =
+                   Tstr_module
+                     {
+                       mb_expr =
+                         { mod_desc = Tmod_structure { str_items; _ }; _ };
+                       _;
+                     };
+                 _;
+               } ->
+               str_items
+           | Typedtree.
+               {
+                 str_desc =
+                   Tstr_module
+                     {
+                       mb_expr =
+                         {
+                           mod_desc =
+                             Tmod_constraint
+                               ( {
+                                   mod_desc = Tmod_structure { str_items; _ };
+                                   _;
+                                 },
+                                 _,
+                                 _,
+                                 _ );
+                           _;
+                         };
+                       _;
+                     };
+                 _;
+               } ->
+               str_items
+           | x -> [ x ])
+      |> List.flatten;
+  }
 
 let type_structure ?(env = default_environment) structure =
   let typed_module =
