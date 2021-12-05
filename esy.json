@@ -7,7 +7,8 @@
   "devDependencies": {
     "@opam/ocamlformat": "*",
     "@opam/ocamlformat-rpc": "*",
-    "@opam/ocaml-lsp-server": "*"
+    "@opam/ocaml-lsp-server": "*",
+    "@opam/utop": "*"
   },
   "resolutions": {
     "@opam/ocaml-recovery-parser": "serokell/ocaml-recovery-parser:ocaml-recovery-parser.opam#7a759aed307f986d43006c50b8ced677e18b5a6d",
