@@ -1,3 +1,4 @@
+module Better_pprintast = Pprintast
 open Ocaml_common
 open Types
 
@@ -159,7 +160,7 @@ and mapper =
               let pexpr = recurse expr in
               Format.printf "function not supported. Representation is %a\n"
                 (Printast.expression 0) pexpr;
-              unimplemented Pprintast.expression pexpr __LINE__
+              unimplemented Better_pprintast.expression pexpr __LINE__
         in
         Ast_helper.Exp.fun_ arg_label (Option.map recurse guard) pattern
           (recurse body)
@@ -228,7 +229,8 @@ and mapper =
    of structure items and joins them with newlines. Essentially this
    processes an arbitrary snippet of OCaml code *)
 let typed_string_of_code struc =
-  struc |> mapper.structure mapper |> Format.asprintf "%a" Pprintast.structure
+  struc |> mapper.structure mapper
+  |> Format.asprintf "%a" Better_pprintast.structure
 
 let default_environment =
   Compmisc.init_path ();

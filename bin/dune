@@ -1,7 +1,7 @@
 (executable
  (public_name O2L)
  (name main)
- (libraries ocaml-compiler-libs.common O2L)
+ (libraries ocaml-compiler-libs.common O2l)
  (preprocess
   (pps ppxlib.metaquot)))
 
