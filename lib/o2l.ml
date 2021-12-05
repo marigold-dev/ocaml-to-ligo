@@ -282,29 +282,14 @@ let module_erasure (structure : Typedtree.structure) =
   }
 
 let type_structure ?(env = default_environment) structure =
-  let typed_module =
-    !Typecore.type_module env
-      {
-        pmod_desc = Pmod_structure structure;
-        pmod_loc =
-          {
-            loc_start = Lexing.dummy_pos;
-            loc_end = Lexing.dummy_pos;
-            loc_ghost = true;
-          };
-        pmod_attributes = [];
-      }
-  in
-  match typed_module.mod_desc with
-  | Tmod_structure ({ str_final_env; _ } as structure)
-  | Tmod_constraint
-      ( { mod_desc = Tmod_structure ({ str_final_env; _ } as structure); _ },
-        _,
-        _,
-        _ ) ->
-      (structure, str_final_env)
-  | Tmod_ident _ -> failwith "Tmod_ident impossible"
-  | Tmod_functor _ -> failwith "Tmod_functor impossible"
-  | Tmod_apply _ -> failwith "Tmod_apply impossible"
-  | Tmod_constraint _ -> failwith "Tmod_constraint impossible"
-  | Tmod_unpack _ -> failwith "Tmod_unpack impossible"
+  try
+    let tstr, _, _, env = Typemod.type_structure env structure in
+    Warnings.check_fatal ();
+    (tstr, env)
+  with exn -> (
+    match Location.error_of_exn exn with
+    | Some (`Ok report) ->
+        Format.eprintf "%a\n%!" Location.print_report report;
+        exit 0
+    | Some _ -> assert false
+    | None -> assert false)
