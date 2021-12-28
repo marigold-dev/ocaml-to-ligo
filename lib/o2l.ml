@@ -183,33 +183,41 @@ and mapper =
         |> Ast_helper.Str.module_
     | Tstr_value (recflag, value_bindings) ->
         let value_bindings =
-          List.map
+          List.filter_map
             (fun binding ->
               match mapper.value_binding mapper binding with
               | { pvb_pat = { ppat_desc = Ppat_constraint _; _ }; _ } as
                 untyped_binding ->
-                  untyped_binding
+                  Some untyped_binding
               | untyped_binding -> (
-                  match ct_of_te Typedtree.(binding.vb_expr.exp_type) with
-                  | Some ct ->
-                      Parsetree.
-                        {
-                          untyped_binding with
-                          pvb_pat =
+                  if
+                    List.exists
+                      (fun x -> x.Parsetree.attr_name.txt = "ligo.disable")
+                      untyped_binding.pvb_attributes
+                  then None
+                  else
+                    match ct_of_te Typedtree.(binding.vb_expr.exp_type) with
+                    | Some ct ->
+                        Some
+                          Parsetree.
                             {
-                              untyped_binding.pvb_pat with
-                              ppat_desc =
-                                Ppat_constraint
-                                  ( untyped_binding.pvb_pat,
-                                    Ptyp_poly ([], ct) |> Ast_helper.Typ.mk );
-                            };
-                        }
-                  | None ->
-                      failwith
-                        (Format.asprintf
-                           "You have a type variable at %a, you must annotate \
-                            it with a concrete type"
-                           Location.print_loc binding.vb_loc)))
+                              untyped_binding with
+                              pvb_pat =
+                                {
+                                  untyped_binding.pvb_pat with
+                                  ppat_desc =
+                                    Ppat_constraint
+                                      ( untyped_binding.pvb_pat,
+                                        Ptyp_poly ([], ct) |> Ast_helper.Typ.mk
+                                      );
+                                };
+                            }
+                    | None ->
+                        failwith
+                          (Format.asprintf
+                             "You have a type variable at %a, you must \
+                              annotate it with a concrete type"
+                             Location.print_loc binding.vb_loc)))
             value_bindings
         in
         value_bindings |> Ast_helper.Str.value recflag

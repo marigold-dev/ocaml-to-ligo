@@ -5,6 +5,14 @@ open Parsetree
 let () = Printexc.record_backtrace true
 
 let loc = Location.none
+
+let ex =
+  [%str
+    let x = 3
+    let[@ligo.disable] x = 4
+    let f2 () = 3
+    let[@ligo.disable] f2 () = 4]
+
 let code =
   [%str
     type hash = bytes
