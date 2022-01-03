@@ -2,6 +2,20 @@ module Better_pprintast = Pprintast
 open Ocaml_common
 open Types
 
+module H = Hashtbl.Make (struct
+  type t = string
+
+  let hash = Hashtbl.hash
+
+  let equal = String.equal
+end)
+
+type stored_module =
+  | Functor of string option * Typedtree.module_expr
+  | Mod of Typedtree.module_expr
+
+let init = H.create 10
+
 let loc = Location.none
 
 let mkloc v =
@@ -175,6 +189,86 @@ and mapper =
     match structure.str_desc with
     | Tstr_module
         {
+          mb_name = name;
+          mb_expr =
+            {
+              mod_desc =
+                Tmod_functor
+                  ( Named (_, param_name, _),
+                    ({ mod_desc = Tmod_structure _; _ } as x) );
+              mod_env = _env;
+              _;
+            };
+          _;
+        } ->
+        let name = Option.get name.txt in
+        let entry = Functor (param_name.txt, x) in
+        H.add init name entry;
+        Untypeast.default_mapper.structure_item mapper structure
+    | Tstr_module
+        { mb_name = name; mb_expr = { mod_desc = Tmod_structure _; _ } as x; _ }
+      ->
+        let name = Option.get name.txt in
+        H.add init name (Mod x);
+        Untypeast.default_mapper.structure_item mapper structure
+    | Tstr_module
+        {
+          mb_expr =
+            {
+              mod_desc =
+                Tmod_apply
+                  ( { mod_desc = Tmod_ident (path, _); _ },
+                    { mod_desc = Tmod_ident (path', _); _ },
+                    _ );
+              mod_env = _env;
+              _;
+            };
+          _;
+        } ->
+        let[@warning "-8"] (Functor (param, outer)) =
+          H.find init (Path.name path)
+        in
+        let[@warning "-8"] (Mod inner) = H.find init (Path.name path') in
+        let inner_mod =
+          inner |> mapper.module_expr mapper
+          |> Ast_helper.Mb.mk { txt = param; loc }
+          |> Ast_helper.Str.module_
+        in
+        let[@warning "-8"] ({
+                              Parsetree.pstr_desc =
+                                Pstr_module
+                                  ({
+                                     pmb_expr =
+                                       {
+                                         pmod_desc = Pmod_structure structure;
+                                         _;
+                                       } as mod_expr;
+                                     _;
+                                   } as pstr_mod);
+                              _;
+                            } as desc) =
+          outer |> mapper.module_expr mapper
+          |> Ast_helper.Mb.mk { txt = Some (Path.name path); loc }
+          |> Ast_helper.Str.module_
+        in
+        let mod_expr =
+          { mod_expr with pmod_desc = Pmod_structure (inner_mod :: structure) }
+        in
+        let new_name =
+          Format.asprintf "%s_%s" (Path.name path) (Option.get param)
+        in
+        let pstr_mod =
+          Parsetree.Pstr_module
+            {
+              pstr_mod with
+              Parsetree.pmb_expr = mod_expr;
+              pmb_name = { txt = Some new_name; loc };
+            }
+        in
+        let desc = { desc with pstr_desc = pstr_mod } in
+        desc
+    | Tstr_module
+        {
           mb_name;
           mb_expr = { mod_desc = Tmod_constraint (mod_expr, _, _, _); _ };
           _;
@@ -243,6 +337,98 @@ let typed_string_of_code struc =
 let default_environment =
   Compmisc.init_path ();
   Compmisc.initial_env ()
+
+let functor_erasure (structure : Typedtree.structure) =
+  let matcher structure =
+    match structure.Typedtree.str_desc with
+    | Tstr_module
+        {
+          mb_name = name;
+          mb_expr =
+            {
+              mod_desc =
+                Tmod_functor
+                  ( Named (_, param_name, _),
+                    ({ mod_desc = Tmod_structure _; _ } as x) );
+              mod_env = _env;
+              _;
+            };
+          _;
+        } ->
+        let name = Option.get name.txt in
+        let entry = Functor (param_name.txt, x) in
+        H.add init name entry;
+        None
+    | Tstr_module
+        { mb_name = name; mb_expr = { mod_desc = Tmod_structure _; _ } as x; _ }
+      ->
+        let name = Option.get name.txt in
+        H.add init name (Mod x);
+        Some structure
+    | Tstr_module
+        {
+          mb_expr =
+            {
+              mod_desc =
+                Tmod_apply
+                  ( { mod_desc = Tmod_ident (path, _); _ },
+                    { mod_desc = Tmod_ident (path', _); _ },
+                    _ );
+              mod_env = _env;
+              _;
+            };
+          _;
+        } ->
+        let[@warning "-8"] (Functor (param, outer)) =
+          H.find init (Path.name path)
+        in
+        let[@warning "-8"] (Mod inner) = H.find init (Path.name path') in
+        let inner_mod =
+          inner |> mapper.module_expr mapper
+          |> Ast_helper.Mb.mk { txt = param; loc }
+          |> Ast_helper.Str.module_
+        in
+        let[@warning "-8"] ({
+                              Parsetree.pstr_desc =
+                                Pstr_module
+                                  ({
+                                     pmb_expr =
+                                       {
+                                         pmod_desc = Pmod_structure structure;
+                                         _;
+                                       } as mod_expr;
+                                     _;
+                                   } as pstr_mod);
+                              _;
+                            } as desc) =
+          outer |> mapper.module_expr mapper
+          |> Ast_helper.Mb.mk { txt = Some (Path.name path); loc }
+          |> Ast_helper.Str.module_
+        in
+        let mod_expr =
+          { mod_expr with pmod_desc = Pmod_structure (inner_mod :: structure) }
+        in
+        let new_name =
+          Format.asprintf "%s_%s" (Path.name path) (Option.get param)
+        in
+        let pstr_mod =
+          Parsetree.Pstr_module
+            {
+              pstr_mod with
+              Parsetree.pmb_expr = mod_expr;
+              pmb_name = { txt = Some new_name; loc };
+            }
+        in
+        let lst, _, _, _ =
+          Typemod.type_structure _env [ { desc with pstr_desc = pstr_mod } ]
+        in
+        Some (List.hd lst.str_items)
+    | _ ->
+        let ret = structure in
+        Some ret
+  in
+  let str_items = List.filter_map matcher structure.str_items in
+  { structure with str_items }
 
 let module_erasure (structure : Typedtree.structure) =
   {

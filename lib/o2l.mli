@@ -13,3 +13,6 @@ val type_structure :
 (* Removes modules from a structure because modules are very inefficient
    in ligo. *)
 val module_erasure : Typedtree.structure -> Typedtree.structure
+
+(* inlines functor applications *)
+val functor_erasure : Typedtree.structure -> Typedtree.structure

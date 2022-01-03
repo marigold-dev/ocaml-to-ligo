@@ -11,7 +11,18 @@ let ex =
     let x = 3
     let[@ligo.disable] x = 4
     let f2 () = 3
-    let[@ligo.disable] f2 () = 4]
+    let[@ligo.disable] f2 () = 4
+    module X = struct
+      type t = int
+      let x = 5
+    end
+    module Make (K : sig
+      type t
+    end) =
+    struct
+      type t = K.t
+    end
+    module M = Make (X)]
 
 let code =
   [%str
