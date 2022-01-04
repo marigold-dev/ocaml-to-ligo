@@ -16,6 +16,10 @@ let ex =
       type t = int
       let x = 5
     end
+    module Y = struct
+      type t = X.t
+      let x = X.x
+    end
     module Make (K : sig
       type t
     end) =

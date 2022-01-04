@@ -430,49 +430,141 @@ let functor_erasure (structure : Typedtree.structure) =
   let str_items = List.filter_map matcher structure.str_items in
   { structure with str_items }
 
+let rename _prefix = function
+  | { Typedtree.str_desc = Tstr_type (bind, types); _ } as x ->
+      let open Typedtree in
+      let typ =
+        List.map
+          (fun x ->
+            let new_manifest =
+              x.typ_manifest
+              |> Option.map (function
+                   | {
+                       ctyp_type =
+                         { desc = Tconstr (_, _type_expr, _ref'); _ } as _ctyp;
+                       ctyp_desc =
+                         Ttyp_constr (Path.Pdot (Path.Pident s, s'), _, cores);
+                       _;
+                     } as x
+                     when String.uppercase_ascii (Ident.name s) = Ident.name s
+                     ->
+                       let path =
+                         Path.Pident
+                           (Ident.create_local
+                              (Format.asprintf "%s_%s"
+                                 (Ident.name s |> String.lowercase_ascii)
+                                 s'))
+                       in
+                       {
+                         x with
+                         ctyp_desc = Ttyp_constr (path, to_lident path, cores);
+                       }
+                   | x -> x)
+            in
+            {
+              x with
+              Typedtree.typ_name =
+                {
+                  x.Typedtree.typ_name with
+                  txt = Format.asprintf "%s_%s" _prefix x.typ_name.txt;
+                };
+              typ_manifest = new_manifest;
+            })
+          types
+      in
+      { x with str_desc = Tstr_type (bind, typ) }
+  | { Typedtree.str_desc = Tstr_value (bind, values); _ } as x ->
+      let open Typedtree in
+      let values =
+        List.map
+          (fun x ->
+            let rename_pat = function
+              | { pat_desc = Tpat_var (ident, name); _ } as x ->
+                  {
+                    x with
+                    pat_desc =
+                      Tpat_var
+                        ( ident,
+                          {
+                            name with
+                            txt = Format.asprintf "%s_%s" _prefix name.txt;
+                          } );
+                  }
+              | _ -> failwith "unimplemented"
+            in
+            let new_pat = rename_pat x.Typedtree.vb_pat in
+            let new_expr =
+              match x.vb_expr.exp_desc with
+              | Texp_ident (Path.Pdot (Path.Pident s, s'), _, typ)
+                when String.uppercase_ascii (Ident.name s) = Ident.name s ->
+                  let path =
+                    Path.Pident
+                      (Ident.create_local
+                         (Format.asprintf "%s_%s"
+                            (Ident.name s |> String.lowercase_ascii)
+                            s'))
+                  in
+                  Texp_ident (path, to_lident path, typ)
+              | x -> x
+            in
+            {
+              x with
+              Typedtree.vb_pat = new_pat;
+              vb_expr = { x.vb_expr with exp_desc = new_expr };
+            })
+          values
+      in
+      { x with str_desc = Tstr_value (bind, values) }
+  | x -> x
+
+let rec erase_mod = function
+  | Typedtree.
+      {
+        str_desc =
+          Tstr_module
+            {
+              mb_name;
+              mb_expr = { mod_desc = Tmod_structure { str_items; _ }; _ };
+              _;
+            };
+        _;
+      } ->
+      List.concat_map
+        (fun x ->
+          rename (mb_name.txt |> Option.get |> String.lowercase_ascii) x
+          |> erase_mod)
+        str_items
+  | Typedtree.
+      {
+        str_desc =
+          Tstr_module
+            {
+              mb_name;
+              mb_expr =
+                {
+                  mod_desc =
+                    Tmod_constraint
+                      ( { mod_desc = Tmod_structure { str_items; _ }; _ },
+                        _,
+                        _,
+                        _ );
+                  _;
+                };
+              _;
+            };
+        _;
+      } ->
+      List.concat_map
+        (fun x ->
+          rename (mb_name.txt |> Option.get |> String.lowercase_ascii) x
+          |> erase_mod)
+        str_items
+  | x -> [ x ]
+
 let module_erasure (structure : Typedtree.structure) =
   {
     structure with
-    str_items =
-      structure.str_items
-      |> List.map (function
-           | Typedtree.
-               {
-                 str_desc =
-                   Tstr_module
-                     {
-                       mb_expr =
-                         { mod_desc = Tmod_structure { str_items; _ }; _ };
-                       _;
-                     };
-                 _;
-               } ->
-               str_items
-           | Typedtree.
-               {
-                 str_desc =
-                   Tstr_module
-                     {
-                       mb_expr =
-                         {
-                           mod_desc =
-                             Tmod_constraint
-                               ( {
-                                   mod_desc = Tmod_structure { str_items; _ };
-                                   _;
-                                 },
-                                 _,
-                                 _,
-                                 _ );
-                           _;
-                         };
-                       _;
-                     };
-                 _;
-               } ->
-               str_items
-           | x -> [ x ])
-      |> List.flatten;
+    str_items = structure.str_items |> List.concat_map erase_mod;
   }
 
 let type_structure ?(env = default_environment) structure =
